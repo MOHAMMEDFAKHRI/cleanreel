@@ -181,16 +181,22 @@ async function run(mode){
 $("prev").onclick=()=>run("preview");
 $("exp").onclick=()=>run("export");
 
-async function poll(id){
+async function poll(id, fails=0){
   try{
-    const j=await(await fetch(API+`/api/jobs/${id}`)).json();
+    const r=await fetch(API+`/api/jobs/${id}`);
+    if(!r.ok) throw new Error("http "+r.status);
+    const j=await r.json();
     $("prog").style.width=Math.round((j.progress||0)*100)+"%";
     $("status").textContent=j.message||j.status;
     if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; credits(); return;}
     if(j.status==="error"){$("status").textContent="Failed: "+(j.error||""); return;}
     setTimeout(()=>poll(id),1200);
-  }catch(e){$("status").textContent="Lost connection to the API.";}
+  }catch(e){
+    // Free instances can briefly restart/cold-start — retry before giving up.
+    if(fails<12){ $("status").textContent="Working… (server waking up, ~30s)"; setTimeout(()=>poll(id,fails+1),3000); }
+    else { $("status").textContent="Lost connection to the API. Please try again."; }
+  }
 }
 </script>
 </body>

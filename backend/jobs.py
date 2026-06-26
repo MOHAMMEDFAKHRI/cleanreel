@@ -105,8 +105,20 @@ class JobManager:
         job.progress = 0.25; job.message = f"Detected: {info['type']}. Cleaning..."
 
         seconds = PREVIEW_SECONDS if job.mode == "preview" else None
-        up = (1080, 1920) if params.get("upscale") and h >= w else \
-             (1920, 1080) if params.get("upscale") else None
+        # Resolution policy — keep the whole container within the free tier's
+        # 512 MB budget. Upscaling source to 1080p pushed peak memory to ~470 MB
+        # and the instance got OOM-killed ("Lost connection to the API").
+        # So by default we NEVER enlarge; we only downscale oversized inputs.
+        # On a larger instance, set WR_ALLOW_UPSCALE=1 (and/or raise WR_MAX_DIM).
+        max_dim = int(os.environ.get("WR_MAX_DIM", "1366"))
+        long_side = max(w, h)
+        if os.environ.get("WR_ALLOW_UPSCALE") == "1" and params.get("upscale"):
+            up = (1080, 1920) if h >= w else (1920, 1080)
+        elif long_side > max_dim:
+            s = max_dim / float(long_side)
+            up = (int(round(w * s)), int(round(h * s)))
+        else:
+            up = None
         out = os.path.join(self.storage, "results", f"{job.id}.mp4")
         wr.process_video(video, out, info, mask, _inpainter(),
                          preview=seconds, upscale=up, sharpen=True,
