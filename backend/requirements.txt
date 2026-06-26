@@ -1,12 +1,13 @@
-# Backend API
+# Backend API — light build that runs on a free 512MB tier (classical engine).
 fastapi
 uvicorn[standard]
 python-multipart
-
-# Engine (same as ../requirements.txt). Neural deps optional -> classical fallback.
-opencv-python
+opencv-python-headless      # headless = no GUI libs; correct for servers
 numpy
 imageio-ffmpeg
-simple-lama-inpainting
-pillow
-torch
+
+# --- Optional: best quality (neural LaMa). Needs more RAM or a GPU instance. ---
+# To enable later: uncomment these, set env WR_ENGINE=auto, and use a bigger instance.
+# simple-lama-inpainting
+# pillow
+# torch
