@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+backend/storage/
+.venv/
+node_modules/
+# don't commit test media / model caches
+*.mp4
+*.mov
+*.npz
+wm_layer.npz

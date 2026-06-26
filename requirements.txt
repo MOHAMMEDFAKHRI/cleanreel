@@ -1,0 +1,11 @@
+# Web UI + engine
+gradio>=4.0,<6      # Blocks(css=, title=) styling API; 6.0 moved these to launch()
+opencv-python
+numpy
+imageio-ffmpeg          # bundles ffmpeg so you don't have to install it separately
+
+# Neural inpainting (recommended). If these are absent, the engine automatically
+# falls back to classical OpenCV inpainting so the demo still runs.
+simple-lama-inpainting
+pillow
+torch                   # on an NVIDIA machine install the CUDA build first: https://pytorch.org

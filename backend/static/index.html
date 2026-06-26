@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CleanReel — Remove Watermarks from Video Online (Free Preview)</title>
+<meta name="description" content="Remove watermarks, logos and overlays from videos you own. AI-powered, keeps faces and detail sharp, audio preserved. Free preview, low-cost export — no software to install."/>
+<link rel="canonical" href="https://cleanreel.app/"/>
+<meta name="robots" content="index,follow"/>
+<!-- Open Graph / Twitter -->
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="CleanReel — Remove Watermarks from Video Online"/>
+<meta property="og:description" content="AI watermark remover for videos you own. Free preview, sharp results, audio kept."/>
+<meta property="og:url" content="https://cleanreel.app/"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="CleanReel — Remove Watermarks from Video Online"/>
+<meta name="twitter:description" content="AI watermark remover for videos you own. Free preview, sharp results."/>
+<!-- Structured data: SoftwareApplication + FAQ (rich results / SEO) -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"CleanReel",
+"applicationCategory":"MultimediaApplication","operatingSystem":"Web",
+"description":"Online AI tool to remove watermarks, logos and overlays from videos you own.",
+"offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Free preview; low-cost export"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"How do I remove a watermark from a video?","acceptedAnswer":{"@type":"Answer","text":"Upload a short video you own, mark the watermark (or let CleanReel auto-detect it), preview the result for free, then export the cleaned video."}},
+{"@type":"Question","name":"Is it free?","acceptedAnswer":{"@type":"Answer","text":"Previews are free. Full exports use low-cost credits to cover GPU processing."}},
+{"@type":"Question","name":"Will it blur my video or ruin faces?","acceptedAnswer":{"@type":"Answer","text":"No. CleanReel protects faces and detailed areas and keeps your audio, so the subject stays sharp."}},
+{"@type":"Question","name":"Can I remove any watermark?","acceptedAnswer":{"@type":"Answer","text":"Use it only on content you own or are licensed to edit, such as your own free-tier exports, an old logo, or stray text."}}]}
+</script>
+<style>
+  :root{--bg:#0b0e1a;--bg2:#10142a;--card:#151a33;--line:#252b4d;--ink:#eef1fb;--mut:#9aa2c0;
+        --acc:#6c8cff;--acc2:#9a6cff;--ok:#36d39b}
+  *{box-sizing:border-box} html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.6 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);
+       background:radial-gradient(1200px 600px at 70% -10%,#1b2350 0,var(--bg) 55%)}
+  a{color:var(--acc);text-decoration:none}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  header{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
+  .logo{font-weight:800;font-size:20px;letter-spacing:.2px}
+  .logo span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  nav a{color:var(--mut);margin-left:20px;font-size:15px} nav a:hover{color:var(--ink)}
+  .hero{text-align:center;padding:54px 0 26px}
+  .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.1;margin:0 0 14px;font-weight:800}
+  .hero h1 span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{color:var(--mut);font-size:18px;max-width:640px;margin:0 auto 22px}
+  .btn{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#fff;border:0;border-radius:12px;
+       padding:13px 22px;font-weight:700;font-size:16px;cursor:pointer;display:inline-block}
+  .btn.ghost{background:#1c2342;color:var(--ink)} .btn:disabled{opacity:.45;cursor:not-allowed}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+  #tool{margin:26px 0;scroll-margin-top:20px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .step-tag{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--acc);margin:0 0 10px}
+  label.chk{display:flex;gap:9px;align-items:center;color:var(--mut);margin:10px 0;font-size:15px}
+  input[type=file]{color:var(--mut);width:100%}
+  video{width:100%;border-radius:12px;background:#000;margin-top:10px;max-height:380px}
+  .bar{height:8px;background:#1c2342;border-radius:6px;overflow:hidden;margin-top:12px}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .35s}
+  .pill{font-size:14px;color:var(--mut)} .ok{color:var(--ok)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  a.dl{display:none;margin-top:12px;color:var(--ok);font-weight:700}
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:14px 0}
+  @media(max-width:760px){.feat{grid-template-columns:1fr}}
+  .feat .card h3{margin:.1em 0 .3em;font-size:17px} .feat .card p{color:var(--mut);margin:0;font-size:15px}
+  h2.sec{font-size:26px;margin:38px 0 14px;text-align:center}
+  .steps{counter-reset:s;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:760px){.steps{grid-template-columns:1fr}}
+  .steps .card:before{counter-increment:s;content:counter(s);display:inline-grid;place-items:center;
+       width:32px;height:32px;border-radius:50%;background:#1c2342;color:var(--acc);font-weight:800;margin-bottom:8px}
+  details{border-bottom:1px solid var(--line);padding:14px 2px} details summary{cursor:pointer;font-weight:600}
+  details p{color:var(--mut)}
+  footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line);margin-top:40px;padding:22px 0 50px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">✨ Clean<span>Reel</span></div>
+    <nav><a href="#tool">Try it</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav>
+  </header>
+
+  <section class="hero">
+    <h1>Remove watermarks from <span>your videos</span>, free to preview</h1>
+    <p>Upload a short clip you own, mark the overlay (or let our AI find it), and download it clean —
+       faces stay sharp, audio is kept, nothing re-watermarked.</p>
+    <a class="btn" href="#tool">Clean a video →</a>
+  </section>
+
+  <!-- TOOL -->
+  <section id="tool" class="card">
+    <div class="grid2">
+      <div>
+        <p class="step-tag">Step 1 · Upload</p>
+        <input id="file" type="file" accept="video/*"/>
+        <div class="row" style="margin-top:10px">
+          <button id="up" class="btn ghost">Upload</button>
+          <span id="meta" class="pill"></span>
+        </div>
+        <p class="step-tag" style="margin-top:18px">Step 2 · Clean</p>
+        <label class="chk"><input id="owns" type="checkbox"/> I own or have the rights to edit this video</label>
+        <div class="row">
+          <button id="prev" class="btn ghost" disabled>👁 Free preview</button>
+          <button id="exp" class="btn" disabled>⬇ Export full</button>
+        </div>
+        <span id="cred" class="pill"></span>
+        <div class="bar"><i id="prog"></i></div>
+        <p id="status" class="pill"></p>
+      </div>
+      <div>
+        <p class="step-tag">Step 3 · Result</p>
+        <video id="out" controls playsinline></video>
+        <a id="dl" class="dl">⬇ Download cleaned video</a>
+      </div>
+    </div>
+  </section>
+
+  <h2 class="sec" id="how">How it works</h2>
+  <div class="steps">
+    <div class="card"><b>Upload &amp; mark</b><p style="color:var(--mut)">Drop in a short video. Brush over the watermark or hit auto-detect.</p></div>
+    <div class="card"><b>AI removes it</b><p style="color:var(--mut)">It adapts to tiled stamps, corner logos, or moving marks — and protects faces.</p></div>
+    <div class="card"><b>Preview &amp; export</b><p style="color:var(--mut)">See a free preview, then export the full clean video with audio intact.</p></div>
+  </div>
+
+  <h2 class="sec">Why CleanReel</h2>
+  <div class="feat">
+    <div class="card"><h3>Adaptive</h3><p>Auto-detects tiled watermarks, corner logos, even moving/animated marks.</p></div>
+    <div class="card"><h3>Keeps detail</h3><p>Recovers the real footage where it can; protects faces, hands and texture.</p></div>
+    <div class="card"><h3>Audio preserved</h3><p>Your original sound is copied through untouched. No re-watermarking.</p></div>
+    <div class="card"><h3>Free preview</h3><p>Always check the result before you spend anything.</p></div>
+    <div class="card"><h3>Low cost</h3><p>Full HD exports use small credits — among the cheapest anywhere.</p></div>
+    <div class="card"><h3>No install</h3><p>Runs in your browser. Nothing to download.</p></div>
+  </div>
+
+  <h2 class="sec" id="faq">FAQ</h2>
+  <details><summary>How do I remove a watermark from a video?</summary><p>Upload a short video you own, mark the watermark (or let CleanReel auto-detect it), preview free, then export the cleaned video.</p></details>
+  <details><summary>Is it free?</summary><p>Previews are free. Full exports use low-cost credits that cover GPU processing.</p></details>
+  <details><summary>Will it blur my video or ruin faces?</summary><p>No — faces and detailed areas are protected and your audio is preserved, so the subject stays sharp.</p></details>
+  <details><summary>What can I legally remove?</summary><p>Only content you own or are licensed to edit — e.g. your own free-tier exports, your old logo, or stray text/timecode.</p></details>
+
+  <footer>
+    CleanReel is for content you own or are licensed to edit. Uploads are processed only for your request.
+    <br/>© <span id="yr"></span> CleanReel · <a href="#faq">FAQ</a>
+  </footer>
+</div>
+
+<script>
+const API = "";                 // same origin (served by the backend)
+const $ = id => document.getElementById(id);
+$("yr").textContent = new Date().getFullYear();
+let fileId = null;
+
+async function credits(){ try{const c=await(await fetch(API+"/api/credits")).json();
+  $("cred").textContent=`${c.export_credits} export credit(s) left`;}catch(e){} }
+credits();
+
+$("up").onclick = async () => {
+  const f=$("file").files[0]; if(!f){alert("Choose a video first.");return;}
+  $("meta").textContent="Uploading…";
+  const fd=new FormData(); fd.append("file",f);
+  try{
+    const r=await fetch(API+"/api/upload",{method:"POST",body:fd});
+    const d=await r.json();
+    if(!r.ok){$("meta").textContent="Error: "+(d.detail||"upload failed");return;}
+    fileId=d.file_id;
+    $("meta").innerHTML=`<span class="ok">Loaded</span> ${d.width}×${d.height}, ${d.seconds}s`;
+    $("prev").disabled=false; $("exp").disabled=false;
+  }catch(e){$("meta").textContent="Network error — is the server running?";}
+};
+
+async function run(mode){
+  if(!fileId){alert("Upload a video first.");return;}
+  if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
+  $("prog").style.width="6%"; $("status").textContent="Submitting…"; $("dl").style.display="none";
+  try{
+    const r=await fetch(API+"/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({file_id:fileId,mode,owns_rights:true,auto:true,upscale:true,protect:true})});
+    const d=await r.json();
+    if(!r.ok){$("status").textContent="Error: "+(d.detail||"failed"); $("prog").style.width="0"; return;}
+    poll(d.job_id);
+  }catch(e){$("status").textContent="Network error.";}
+}
+$("prev").onclick=()=>run("preview");
+$("exp").onclick=()=>run("export");
+
+async function poll(id){
+  try{
+    const j=await(await fetch(API+`/api/jobs/${id}`)).json();
+    $("prog").style.width=Math.round((j.progress||0)*100)+"%";
+    $("status").textContent=j.message||j.status;
+    if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
+      $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; credits(); return;}
+    if(j.status==="error"){$("status").textContent="Failed: "+(j.error||""); return;}
+    setTimeout(()=>poll(id),1200);
+  }catch(e){$("status").textContent="Lost connection to server.";}
+}
+</script>
+</body>
+</html>

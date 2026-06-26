@@ -1,0 +1,12 @@
+# Backend API
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Engine (same as ../requirements.txt). Neural deps optional -> classical fallback.
+opencv-python
+numpy
+imageio-ffmpeg
+simple-lama-inpainting
+pillow
+torch
