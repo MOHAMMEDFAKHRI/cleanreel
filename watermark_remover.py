@@ -264,37 +264,98 @@ def _refine_and_extract(meanf, v1, v2):
         B[:, :, c] = np.real(np.fft.ifft2(np.fft.ifftshift(Fc)))
     return B
 
+def _calibrate_gain(path, B, meanf, n):
+    """Pick the reverse-blend strength that best flattens the residual high-freq."""
+    C = 245.0
+    def hp(x):
+        g = cv2.cvtColor(np.clip(x, 0, 255).astype(np.uint8),
+                         cv2.COLOR_BGR2GRAY).astype(np.float32)
+        return g - cv2.GaussianBlur(g, (0, 0), 6)
+    num = de = 0.0
+    for i, f in enumerate(frames_iter(path)):
+        if i % max(1, n // 6):
+            continue
+        O = f.astype(np.float32); r = np.clip((C - O) / (C - meanf + 1e-3), 0, 2.5)
+        D = hp(O) - hp(O - B * r); num += float((hp(O) * D).sum()); de += float((D * D).sum())
+    return float(np.clip(num / max(de, 1e-6), 0.5, 2.0))
+
+
+def _detect_soft_overlay(meanf, std_gray=None):
+    """Find a STATIC, SEMI-TRANSPARENT logo/wordmark (e.g. a stock-site stamp
+    like 'shutterstock' across the middle of the frame).
+
+    Such a mark is NOT periodic (so the lattice path misses it) and is NOT a
+    compact opaque bug. We localise it by the fact that, in the temporal mean,
+    its structure is a 2-D consistent overlay: it has edge energy in BOTH the
+    x and y directions (text), which separates it from 1-D edges like a horizon
+    (y-energy only) and from moving content (which averages out of the mean).
+    Returns (mask, B) for the reverse-blend path, or None.
+    """
+    h, w = meanf.shape[:2]
+    gmean = cv2.cvtColor(np.clip(meanf, 0, 255).astype(np.uint8),
+                         cv2.COLOR_BGR2GRAY).astype(np.float32)
+    mhp = gmean - cv2.GaussianBlur(gmean, (0, 0), 9)          # consistent overlay structure
+    gx = cv2.Sobel(mhp, cv2.CV_32F, 1, 0, 3)
+    gy = cv2.Sobel(mhp, cv2.CV_32F, 0, 1, 3)
+    Ex = cv2.boxFilter(gx * gx, -1, (15, 15))
+    Ey = cv2.boxFilter(gy * gy, -1, (15, 15))
+    tex = np.sqrt(np.minimum(Ex, Ey))                        # 2-D (text) energy, not 1-D edges
+    hi = float(np.percentile(tex, 99.7)); med = float(np.percentile(tex, 50)) + 1e-6
+    if hi < 6.0 or hi / med < 8.0:                           # no distinct consistent overlay
+        return None
+    m = (tex > np.percentile(tex, 98.3)).astype(np.uint8)
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((9, 31), np.uint8))
+    nlab, lab, stats, _ = cv2.connectedComponentsWithStats(m)
+    keep = np.zeros_like(m)
+    for k in range(1, nlab):
+        x, y, bw, bh, area = stats[k]
+        if area < 0.0015 * m.size or bw > 0.85 * w:          # too small / full-width (horizon)
+            continue
+        if std_gray is not None and float(std_gray[lab == k].mean()) < 3.0:
+            continue                                         # baked-in/opaque -> not reverse-blend
+        keep[lab == k] = 1
+    if keep.sum() == 0:
+        return None
+    mask = cv2.dilate(keep, np.ones((7, 7), np.uint8))
+    cov = float(mask.mean())
+    if not (0.002 < cov < 0.25):
+        return None
+    B = (meanf - cv2.GaussianBlur(meanf, (0, 0), 9)) * mask[..., None]
+    return mask, B
+
+
 def detect(path):
-    """Return dict(type, mask, B, meanf, gain). type in tiled|logo|none."""
+    """Return dict(type, mask, B, meanf, gain). type in tiled|logo-soft|logo|none."""
     w, h, fps, n = probe(path)
     segs = detect_scenes(path, n)
     acc = np.zeros((h, w, 3), np.float64); cnt = 0
+    sg = np.zeros((h, w), np.float64); sg2 = np.zeros((h, w), np.float64)
     for f in frames_iter(path):
         acc += f; cnt += 1
+        g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float64)
+        sg += g; sg2 += g * g
     meanf = (acc / max(cnt, 1)).astype(np.float32)
+    mg = sg / max(cnt, 1)
+    std_gray = np.sqrt(np.clip(sg2 / max(cnt, 1) - mg * mg, 0, None)).astype(np.float32)
     wm = _watermark_gradient_map(path, segs, h, w)
 
     lat = _find_lattice(wm)
     if lat and lat[2] > 0.10:                       # strong periodicity -> TILED
         B = _refine_and_extract(meanf, lat[0], lat[1])
         if B is not None:
-            C = 245.0
-            def hp(x):
-                g = cv2.cvtColor(np.clip(x, 0, 255).astype(np.uint8),
-                                 cv2.COLOR_BGR2GRAY).astype(np.float32)
-                return g - cv2.GaussianBlur(g, (0, 0), 6)
-            num = de = 0.0
-            for i, f in enumerate(frames_iter(path)):
-                if i % max(1, n // 6):
-                    continue
-                O = f.astype(np.float32); r = np.clip((C-O)/(C-meanf+1e-3), 0, 2.5)
-                D = hp(O) - hp(O - B * r); num += float((hp(O)*D).sum()); de += float((D*D).sum())
-            gain = float(np.clip(num / max(de, 1e-6), 0.5, 2.0))
+            gain = _calibrate_gain(path, B, meanf, n)
             prom = np.maximum(B.mean(2) - cv2.GaussianBlur(B.mean(2), (0, 0), 9), 0)
             mask = (prom > np.percentile(prom, 63)).astype(np.uint8)
             mask = cv2.dilate(cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)),
                               np.ones((3, 3), np.uint8))
             return dict(type="tiled", mask=mask, B=B, meanf=meanf, gain=gain)
+
+    # SEMI-TRANSPARENT static logo / wordmark (e.g. a stock-site stamp) -> reverse-blend
+    soft = _detect_soft_overlay(meanf, std_gray)
+    if soft is not None:
+        mask, B = soft
+        gain = _calibrate_gain(path, B, meanf, n)
+        return dict(type="logo-soft", mask=mask, B=B, meanf=meanf, gain=gain)
 
     # not tiled: look for a compact static high-gradient blob (corner logo / bug)
     wn = cv2.GaussianBlur(wm, (0, 0), 2)
