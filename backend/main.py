@@ -17,7 +17,7 @@ PROD notes are inline. Credits/auth here are in-memory stubs to demonstrate the
 free-vs-paid gate; wire Stripe + real auth before launch.
 """
 import os, uuid, shutil
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,11 @@ import cv2
 import numpy as np, base64
 from jobs import JobManager, MAX_EXPORT_SECONDS, PREVIEW_SECONDS
 import watermark_remover as wr   # jobs.py puts the engine dir on sys.path on import
+import accounts                  # users, magic-link auth, credit balances, packs
+try:
+    import stripe
+except Exception:
+    stripe = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STORAGE = os.path.join(HERE, "storage")
@@ -35,21 +40,25 @@ os.makedirs(UPLOADS, exist_ok=True)
 
 MAX_UPLOAD_MB = 200
 MAX_UPLOAD_SECONDS = 60          # hard ceiling for uploads (MVP)
-FREE_EXPORT_CREDITS = 3          # PROD: per-user, from DB/Stripe
 
-app = FastAPI(title="CleanReel API", version="0.1")
+STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+if stripe and STRIPE_SECRET:
+    stripe.api_key = STRIPE_SECRET
+
+app = FastAPI(title="CleanReel API", version="0.2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+accounts.init_db()
 
 manager = JobManager(STORAGE)
-FILES: dict[str, dict] = {}      # file_id -> {path, w, h, seconds}   (PROD: DB + object storage)
-CREDITS: dict[str, int] = {}     # user_id -> remaining export credits (PROD: DB/Stripe)
+FILES: dict[str, dict] = {}      # file_id -> {path, w, h, seconds}
 
 
-def _user(x_user: str | None) -> str:
-    return x_user or "anon"
-
-def credits_of(uid: str) -> int:
-    return CREDITS.setdefault(uid, FREE_EXPORT_CREDITS)
+def current_user(authorization: str | None) -> str | None:
+    """Email of the signed-in user from the Bearer session token, or None."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    return accounts.verify_token(authorization.split(" ", 1)[1], "session")
 
 
 @app.get("/api/health")
@@ -57,10 +66,82 @@ def health():
     return {"ok": True, "preview_seconds": PREVIEW_SECONDS,
             "max_export_seconds": MAX_EXPORT_SECONDS}
 
-@app.get("/api/credits")
-def get_credits(x_user: str | None = Header(default=None)):
-    uid = _user(x_user)
-    return {"user": uid, "export_credits": credits_of(uid)}
+class EmailReq(BaseModel):
+    email: str
+
+class TokenReq(BaseModel):
+    token: str
+
+class CheckoutReq(BaseModel):
+    pack: str
+
+@app.post("/api/auth/request")
+def auth_request(req: EmailReq):
+    """Email the user a one-click magic-link to sign in."""
+    email = (req.email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1] or len(email) > 200:
+        raise HTTPException(400, "Please enter a valid email address.")
+    link = accounts.send_magic_link(email)          # returns link only if email unconfigured
+    return {"sent": True, **({"dev_link": link} if link else {})}
+
+@app.post("/api/auth/verify")
+def auth_verify(req: TokenReq):
+    """Exchange a magic-link token for a 30-day session token."""
+    email = accounts.verify_token(req.token, "login")
+    if not email:
+        raise HTTPException(400, "This sign-in link is invalid or has expired.")
+    credits = accounts.ensure_user(email)
+    session = accounts.sign_token(email, "session", ttl=60 * 60 * 24 * 30)
+    return {"email": email, "credits": credits, "session": session}
+
+@app.get("/api/me")
+def me(authorization: str | None = Header(default=None)):
+    email = current_user(authorization)
+    if not email:
+        raise HTTPException(401, "Not signed in.")
+    return {"email": email, "credits": accounts.get_credits(email)}
+
+@app.get("/api/packs")
+def packs():
+    return {"packs": accounts.PACKS, "configured": bool(stripe and STRIPE_SECRET)}
+
+@app.post("/api/checkout")
+def checkout(req: CheckoutReq, authorization: str | None = Header(default=None)):
+    email = current_user(authorization)
+    if not email:
+        raise HTTPException(401, "Sign in first.")
+    if not (stripe and STRIPE_SECRET):
+        raise HTTPException(503, "Payments aren't set up yet — check back soon.")
+    pack = accounts.PACKS.get(req.pack)
+    if not pack:
+        raise HTTPException(400, "Unknown pack.")
+    s = stripe.checkout.Session.create(
+        mode="payment", customer_email=email, client_reference_id=email,
+        line_items=[{"quantity": 1, "price_data": {"currency": "usd",
+            "unit_amount": pack["amount"],
+            "product_data": {"name": f"CleanReel — {pack['label']}"}}}],
+        metadata={"email": email, "credits": str(pack["credits"])},
+        success_url=f"{accounts.SITE_URL}/#paid",
+        cancel_url=f"{accounts.SITE_URL}/#tool")
+    return {"url": s.url}
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    if not (stripe and STRIPE_SECRET and STRIPE_WEBHOOK_SECRET):
+        raise HTTPException(503, "Webhook not configured.")
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, request.headers.get("stripe-signature", ""), STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        raise HTTPException(400, "Invalid signature.")
+    if event["type"] == "checkout.session.completed" and accounts.event_is_new(event["id"]):
+        obj = event["data"]["object"]; md = obj.get("metadata") or {}
+        email = md.get("email") or obj.get("customer_email")
+        credits = int(md.get("credits", 0) or 0)
+        if email and credits:
+            accounts.add_credits(email, credits)
+    return {"received": True}
 
 
 @app.post("/api/upload")
@@ -147,7 +228,7 @@ class JobRequest(BaseModel):
 
 
 @app.post("/api/jobs")
-def create_job(req: JobRequest, x_user: str | None = Header(default=None)):
+def create_job(req: JobRequest, authorization: str | None = Header(default=None)):
     if not req.owns_rights:
         raise HTTPException(403, "You must confirm you own/have rights to edit this video.")
     meta = FILES.get(req.file_id)
@@ -156,13 +237,14 @@ def create_job(req: JobRequest, x_user: str | None = Header(default=None)):
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
 
-    uid = _user(x_user)
-    if req.mode == "export":
+    if req.mode == "export":                 # preview stays free & anonymous
         if meta["seconds"] > MAX_EXPORT_SECONDS:
             raise HTTPException(413, f"Export limited to {MAX_EXPORT_SECONDS}s in this tier.")
-        if credits_of(uid) <= 0:
-            raise HTTPException(402, "Out of export credits. Top up to export full video.")
-        CREDITS[uid] -= 1            # PROD: charge via Stripe / decrement real balance
+        email = current_user(authorization)
+        if not email:
+            raise HTTPException(401, "Please sign in to export.")
+        if not accounts.use_credit(email):
+            raise HTTPException(402, "Out of export credits. Buy a pack to export the full video.")
 
     params = {
         "video_path": meta["path"],
