@@ -88,13 +88,13 @@ class JobManager:
         video = params["video_path"]
         w, h, fps, n = wr.probe(video)
 
-        # Decide the mask: explicit boxes/painted mask, else auto-detect.
+        # Decide the mask: user-painted mask, explicit boxes, else auto-detect.
         info = dict(type="manual", mask=None, B=None, meanf=None, gain=0.0)
         if params.get("mask_path"):
-            mask = wr.mask_from_painted(params["mask_path"], h, w)
-            det = wr.detect(video)
-            if det["type"] == "tiled":
-                info = det; mask = (mask | det["mask"]).astype("uint8")
+            user_mask = wr.mask_from_painted(params["mask_path"], h, w)
+            info = wr.info_from_user_mask(video, user_mask,
+                                          params.get("meanf"), params.get("std_gray"))
+            mask = info["mask"]
         elif params.get("boxes"):
             mask = wr.mask_from_boxes(params["boxes"], h, w)
         else:

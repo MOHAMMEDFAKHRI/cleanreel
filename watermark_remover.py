@@ -369,6 +369,74 @@ def detect(path):
 
 
 # --------------------------------------------------------------------------- #
+# Interactive helpers (canvas reference frame + user-painted mask)
+# --------------------------------------------------------------------------- #
+def sharpest_frame(path, limit=400):
+    """Return the sharpest frame (max Laplacian variance) — a good canvas still."""
+    best = None; bestv = -1.0
+    for f in frames_iter(path, limit):
+        v = float(cv2.Laplacian(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+        if v > bestv:
+            bestv = v; best = f.copy()
+    return best
+
+
+def mean_and_std(path):
+    """One pass: temporal mean frame (BGR float32) + per-pixel gray std (float32)."""
+    w, h, fps, n = probe(path)
+    acc = np.zeros((h, w, 3), np.float64); cnt = 0
+    sg = np.zeros((h, w), np.float64); sg2 = np.zeros((h, w), np.float64)
+    for f in frames_iter(path):
+        acc += f; cnt += 1
+        g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float64); sg += g; sg2 += g * g
+    meanf = (acc / max(cnt, 1)).astype(np.float32)
+    mg = sg / max(cnt, 1)
+    std_gray = np.sqrt(np.clip(sg2 / max(cnt, 1) - mg * mg, 0, None)).astype(np.float32)
+    return meanf, std_gray
+
+
+def reference_image(path, meanf=None):
+    """A sharp still with any STATIC semi-transparent mark highlighted (yellow
+    glow), so the user can SEE exactly where to brush. Returns BGR uint8."""
+    if meanf is None:
+        meanf, _ = mean_and_std(path)
+    gm = cv2.cvtColor(np.clip(meanf, 0, 255).astype(np.uint8),
+                      cv2.COLOR_BGR2GRAY).astype(np.float32)
+    mhp = gm - cv2.GaussianBlur(gm, (0, 0), 9)
+    gx = cv2.Sobel(mhp, cv2.CV_32F, 1, 0, 3); gy = cv2.Sobel(mhp, cv2.CV_32F, 0, 1, 3)
+    tex = np.sqrt(np.minimum(cv2.boxFilter(gx * gx, -1, (15, 15)),
+                             cv2.boxFilter(gy * gy, -1, (15, 15))))
+    thr = np.percentile(tex, 98.5); hi = np.percentile(tex, 99.9)
+    t = np.clip((tex - thr) / (hi - thr + 1e-6), 0, 1)       # only the mark glows
+    t = cv2.GaussianBlur(t, (0, 0), 2)
+    base = sharpest_frame(path)
+    if base is None:
+        base = np.clip(meanf, 0, 255).astype(np.uint8)
+    out = base.astype(np.float32)
+    tint = np.zeros_like(out); tint[..., 1] = 255; tint[..., 2] = 255   # yellow highlight
+    a = t[..., None] * 0.75
+    out = out * (1 - a) + tint * a
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def info_from_user_mask(path, mask01, meanf=None, std_gray=None):
+    """Build processing info for a user-painted mask (white = remove).
+    Semi-transparent area (content shows through) -> reverse-blend + inpaint.
+    Opaque area (no content shows through) -> straight inpaint."""
+    w, h, fps, n = probe(path)
+    if meanf is None or std_gray is None:
+        meanf, std_gray = mean_and_std(path)
+    mask = (mask01 > 0).astype(np.uint8)
+    if mask.sum() == 0:
+        return dict(type="manual", mask=mask, B=None, meanf=meanf, gain=0.0)
+    if float(std_gray[mask > 0].mean()) < 3.0:               # opaque -> inpaint only
+        return dict(type="manual", mask=mask, B=None, meanf=meanf, gain=0.0)
+    B = (meanf - cv2.GaussianBlur(meanf, (0, 0), 9)) * mask[..., None]
+    gain = _calibrate_gain(path, B, meanf, n)
+    return dict(type="logo-soft", mask=mask, B=B, meanf=meanf, gain=gain)
+
+
+# --------------------------------------------------------------------------- #
 # Masks from user input
 # --------------------------------------------------------------------------- #
 def mask_from_painted(png_path, h, w):

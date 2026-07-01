@@ -24,7 +24,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import cv2
+import numpy as np, base64
 from jobs import JobManager, MAX_EXPORT_SECONDS, PREVIEW_SECONDS
+import watermark_remover as wr   # jobs.py puts the engine dir on sys.path on import
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STORAGE = os.path.join(HERE, "storage")
@@ -93,11 +95,52 @@ async def upload(file: UploadFile = File(...)):
     return {"file_id": fid, "width": w, "height": h, "seconds": seconds}
 
 
+def _mean_std(meta):
+    """Cache the temporal mean + std per file so re-previews don't recompute it."""
+    c = meta.get("_ms")
+    if c is None:
+        c = wr.mean_and_std(meta["path"]); meta["_ms"] = c
+    return c
+
+
+@app.get("/api/reference/{fid}")
+def reference(fid: str):
+    """A sharp still with the static watermark highlighted — the canvas to mark on."""
+    meta = FILES.get(fid)
+    if not meta:
+        raise HTTPException(404, "Unknown file_id (upload first).")
+    cache = meta.get("_ref")
+    if cache is None:
+        meanf, _ = _mean_std(meta)
+        ok, buf = cv2.imencode(".jpg", wr.reference_image(meta["path"], meanf),
+                               [cv2.IMWRITE_JPEG_QUALITY, 86])
+        cache = buf.tobytes(); meta["_ref"] = cache
+    return Response(cache, media_type="image/jpeg")
+
+
+@app.post("/api/autodetect/{fid}")
+def autodetect(fid: str):
+    """Run auto-detection and return its mask as a PNG (white = watermark)."""
+    meta = FILES.get(fid)
+    if not meta:
+        raise HTTPException(404, "Unknown file_id (upload first).")
+    det = meta.get("_det")
+    if det is None:
+        det = wr.detect(meta["path"]); meta["_det"] = det
+    m = det.get("mask")
+    if m is None:
+        m = np.zeros((meta["h"], meta["w"]), np.uint8)
+    ok, buf = cv2.imencode(".png", (m > 0).astype(np.uint8) * 255)
+    return Response(buf.tobytes(), media_type="image/png",
+                    headers={"X-Watermark-Type": det.get("type", "none")})
+
+
 class JobRequest(BaseModel):
     file_id: str
     mode: str = "preview"                 # 'preview' (free) | 'export' (paid)
     owns_rights: bool = False
     boxes: list[list[int]] | None = None  # [[x,y,w,h], ...]
+    mask: str | None = None               # base64 PNG (white = remove) from the canvas editor
     auto: bool = True
     upscale: bool = True
     protect: bool = True
@@ -126,6 +169,13 @@ def create_job(req: JobRequest, x_user: str | None = Header(default=None)):
         "boxes": [tuple(b) for b in req.boxes] if req.boxes else None,
         "upscale": req.upscale, "protect": req.protect,
     }
+    if req.mask:
+        raw = base64.b64decode(req.mask.split(",", 1)[-1])     # tolerate data: URL prefix
+        mpath = os.path.join(UPLOADS, req.file_id + "_mask.png")
+        with open(mpath, "wb") as mf:
+            mf.write(raw)
+        meanf, std_gray = _mean_std(meta)
+        params.update(mask_path=mpath, meanf=meanf, std_gray=std_gray)
     job_id = manager.submit(req.mode, params)
     return {"job_id": job_id, "mode": req.mode}
 

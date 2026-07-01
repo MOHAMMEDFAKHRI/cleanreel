@@ -68,6 +68,14 @@
   details{border-bottom:1px solid var(--line);padding:14px 2px} details summary{cursor:pointer;font-weight:600}
   details p{color:var(--mut)}
   footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line);margin-top:40px;padding:22px 0 50px;text-align:center}
+  .editor{position:relative;width:100%;border-radius:12px;overflow:hidden;background:#000}
+  .editor canvas.base{display:block;width:100%;height:auto}
+  .editor canvas.mask{position:absolute;left:0;top:0;width:100%;height:100%;opacity:.5;touch-action:none;cursor:crosshair}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  .tool{background:#1c2342;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:14px;cursor:pointer}
+  .tool.active{background:linear-gradient(90deg,var(--acc),var(--acc2));border-color:transparent}
+  .toolbar input[type=range]{accent-color:var(--acc)}
+  .hint{color:var(--mut);font-size:13px;margin:6px 0 0}
 </style>
 </head>
 <body>
@@ -93,7 +101,26 @@
           <button id="up" class="btn ghost">Upload</button>
           <span id="meta" class="pill"></span>
         </div>
-        <p class="step-tag" style="margin-top:18px">Step 2 · Clean</p>
+
+        <p class="step-tag" style="margin-top:18px">Step 2 · Highlight the watermark</p>
+        <p id="needUpload" class="hint">Upload a video and I'll show a frame with the watermark highlighted for you to mark.</p>
+        <div id="editorWrap" style="display:none">
+          <div class="editor" id="editor">
+            <canvas id="refCanvas" class="base"></canvas>
+            <canvas id="maskCanvas" class="mask"></canvas>
+          </div>
+          <div class="toolbar">
+            <button class="tool active" id="tBrush">🖌 Brush</button>
+            <button class="tool" id="tBox">▭ Box</button>
+            <button class="tool" id="tErase">🧽 Eraser</button>
+            <label class="pill" style="display:flex;align-items:center;gap:6px">Size
+              <input id="brushSize" type="range" min="6" max="90" value="28"/></label>
+            <button class="tool" id="tAuto">✨ Auto-detect</button>
+            <button class="tool" id="tClear">Clear</button>
+          </div>
+          <p class="hint">Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.</p>
+        </div>
+
         <label class="chk"><input id="owns" type="checkbox"/> I own or have the rights to edit this video</label>
         <div class="row">
           <button id="prev" class="btn ghost" disabled>👁 Free preview</button>
@@ -107,6 +134,7 @@
         <p class="step-tag">Step 3 · Result</p>
         <video id="out" controls playsinline></video>
         <a id="dl" class="dl">⬇ Download cleaned video</a>
+        <p id="retry" class="hint" style="display:none">Not fully clean? Adjust your highlight on the left and hit <b>Free preview</b> again — previews are free and unlimited.</p>
       </div>
     </div>
   </section>
@@ -146,11 +174,76 @@
 const API = (window.API_BASE || "");
 const $ = id => document.getElementById(id);
 $("yr").textContent = new Date().getFullYear();
-let fileId = null;
+let fileId=null, vw=0, vh=0;
 
 async function credits(){ try{const c=await(await fetch(API+"/api/credits")).json();
   $("cred").textContent=`${c.export_credits} export credit(s) left`;}catch(e){} }
 credits();
+
+/* ---------- canvas editor ---------- */
+const refC=$("refCanvas"), maskC=$("maskCanvas");
+const rctx=refC.getContext("2d"), mctx=maskC.getContext("2d");
+const MASK_RGB=[255,42,90], MASK_COLOR="rgb(255,42,90)";
+let tool="brush", drawing=false, last=null, boxStart=null, boxSnap=null;
+
+function setTool(t){ tool=t;
+  [["tBrush","brush"],["tBox","box"],["tErase","erase"]].forEach(([id,n])=>$(id).classList.toggle("active",n===t)); }
+$("tBrush").onclick=()=>setTool("brush");
+$("tBox").onclick=()=>setTool("box");
+$("tErase").onclick=()=>setTool("erase");
+$("tClear").onclick=()=>mctx.clearRect(0,0,maskC.width,maskC.height);
+
+function scale(){ const r=maskC.getBoundingClientRect(); return maskC.width/(r.width||1); }
+function pos(e){ const r=maskC.getBoundingClientRect(); const s=maskC.width/(r.width||1);
+  return {x:(e.clientX-r.left)*s, y:(e.clientY-r.top)*(maskC.height/(r.height||1))}; }
+function rad(){ return (+$("brushSize").value)*scale(); }
+function stroke(a,b){ mctx.globalCompositeOperation=(tool==="erase")?"destination-out":"source-over";
+  mctx.strokeStyle=MASK_COLOR; mctx.fillStyle=MASK_COLOR; mctx.lineCap="round"; mctx.lineWidth=rad()*2;
+  mctx.beginPath(); mctx.moveTo(a.x,a.y); mctx.lineTo(b.x,b.y); mctx.stroke();
+  mctx.beginPath(); mctx.arc(b.x,b.y,rad(),0,7); mctx.fill(); }
+
+maskC.addEventListener("pointerdown",e=>{ if(!fileId)return; e.preventDefault();
+  maskC.setPointerCapture(e.pointerId); drawing=true; const p=pos(e);
+  if(tool==="box"){ boxStart=p; boxSnap=mctx.getImageData(0,0,maskC.width,maskC.height); }
+  else { last=p; stroke(p,p); } });
+maskC.addEventListener("pointermove",e=>{ if(!drawing)return; const p=pos(e);
+  if(tool==="box"){ mctx.putImageData(boxSnap,0,0); mctx.globalCompositeOperation="source-over";
+    mctx.fillStyle=MASK_COLOR; mctx.fillRect(Math.min(boxStart.x,p.x),Math.min(boxStart.y,p.y),
+      Math.abs(p.x-boxStart.x),Math.abs(p.y-boxStart.y)); }
+  else { stroke(last,p); last=p; } });
+function endDraw(){ drawing=false; last=boxStart=boxSnap=null; }
+maskC.addEventListener("pointerup",endDraw);
+maskC.addEventListener("pointercancel",endDraw);
+
+function maskEmpty(){ const d=mctx.getImageData(0,0,maskC.width,maskC.height).data;
+  for(let i=3;i<d.length;i+=4) if(d[i]>10) return false; return true; }
+function maskPNG(){ const t=document.createElement("canvas"); t.width=maskC.width; t.height=maskC.height;
+  const tx=t.getContext("2d"), src=mctx.getImageData(0,0,maskC.width,maskC.height).data;
+  const out=tx.createImageData(maskC.width,maskC.height), o=out.data;
+  for(let i=0;i<src.length;i+=4){ const on=src[i+3]>10?255:0; o[i]=o[i+1]=o[i+2]=on; o[i+3]=255; }
+  tx.putImageData(out,0,0); return t.toDataURL("image/png"); }
+
+async function loadReference(){
+  try{ const r=await fetch(API+`/api/reference/${fileId}`); const b=await r.blob();
+    const img=new Image(); img.onload=()=>rctx.drawImage(img,0,0,refC.width,refC.height);
+    img.src=URL.createObjectURL(b);
+  }catch(e){}
+}
+$("tAuto").onclick=async()=>{
+  if(!fileId)return; const btn=$("tAuto"); btn.textContent="Detecting…";
+  try{
+    const r=await fetch(API+`/api/autodetect/${fileId}`,{method:"POST"}); const b=await r.blob();
+    const img=new Image(); img.onload=()=>{
+      const tmp=document.createElement("canvas"); tmp.width=maskC.width; tmp.height=maskC.height;
+      const tc=tmp.getContext("2d"); tc.drawImage(img,0,0,maskC.width,maskC.height);
+      const d=tc.getImageData(0,0,maskC.width,maskC.height).data;
+      const out=mctx.createImageData(maskC.width,maskC.height), o=out.data;
+      for(let i=0;i<d.length;i+=4){ if(d[i]>127){ o[i]=MASK_RGB[0];o[i+1]=MASK_RGB[1];o[i+2]=MASK_RGB[2];o[i+3]=255; } }
+      mctx.globalCompositeOperation="source-over"; mctx.putImageData(out,0,0);
+      btn.textContent="✨ Auto-detect";
+    }; img.src=URL.createObjectURL(b);
+  }catch(e){ btn.textContent="✨ Auto-detect"; }
+};
 
 $("up").onclick = async () => {
   const f=$("file").files[0]; if(!f){alert("Choose a video first.");return;}
@@ -160,19 +253,26 @@ $("up").onclick = async () => {
     const r=await fetch(API+"/api/upload",{method:"POST",body:fd});
     const d=await r.json();
     if(!r.ok){$("meta").textContent="Error: "+(d.detail||"upload failed");return;}
-    fileId=d.file_id;
-    $("meta").innerHTML=`<span class="ok">Loaded</span> ${d.width}×${d.height}, ${d.seconds}s`;
+    fileId=d.file_id; vw=d.width; vh=d.height;
+    $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
+    refC.width=maskC.width=vw; refC.height=maskC.height=vh;
+    mctx.clearRect(0,0,vw,vh);
+    $("needUpload").style.display="none"; $("editorWrap").style.display="block";
     $("prev").disabled=false; $("exp").disabled=false;
+    loadReference();
   }catch(e){$("meta").textContent="Network error — is the API URL set in config.js?";}
 };
 
 async function run(mode){
   if(!fileId){alert("Upload a video first.");return;}
   if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
-  $("prog").style.width="6%"; $("status").textContent="Submitting…"; $("dl").style.display="none";
+  $("prog").style.width="6%"; $("status").textContent="Submitting…";
+  $("dl").style.display="none"; $("retry").style.display="none";
+  const body={file_id:fileId,mode,owns_rights:true,protect:true,upscale:true};
+  if(!maskEmpty()) body.mask=maskPNG();
   try{
     const r=await fetch(API+"/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({file_id:fileId,mode,owns_rights:true,auto:true,upscale:true,protect:true})});
+      body:JSON.stringify(body)});
     const d=await r.json();
     if(!r.ok){$("status").textContent="Error: "+(d.detail||"failed"); $("prog").style.width="0"; return;}
     poll(d.job_id);
@@ -189,11 +289,11 @@ async function poll(id, fails=0){
     $("prog").style.width=Math.round((j.progress||0)*100)+"%";
     $("status").textContent=j.message||j.status;
     if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
-      $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; credits(); return;}
+      $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block";
+      $("retry").style.display="block"; credits(); return;}
     if(j.status==="error"){$("status").textContent="Failed: "+(j.error||""); return;}
     setTimeout(()=>poll(id),1200);
   }catch(e){
-    // Free instances can briefly restart/cold-start — retry before giving up.
     if(fails<12){ $("status").textContent="Working… (server waking up, ~30s)"; setTimeout(()=>poll(id,fails+1),3000); }
     else { $("status").textContent="Lost connection to the API. Please try again."; }
   }
