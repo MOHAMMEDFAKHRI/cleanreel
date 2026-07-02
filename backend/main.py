@@ -142,12 +142,14 @@ async def stripe_webhook(request: Request):
         event = json.loads(payload)
     except Exception:
         raise HTTPException(400, "Bad payload.")
-    if event.get("type") == "checkout.session.completed" and accounts.event_is_new(event.get("id", "")):
+    if event.get("type") == "checkout.session.completed":
         obj = (event.get("data") or {}).get("object") or {}
         md = obj.get("metadata") or {}
         email = md.get("email") or obj.get("customer_email")
         credits = int(md.get("credits", 0) or 0)
-        if email and credits:
+        # Consume the idempotency guard only when we actually have work to do, so a
+        # transient error elsewhere can't "poison" the event and lose paid credits.
+        if email and credits and accounts.event_is_new(event.get("id", "")):
             accounts.add_credits(email, credits)
     return {"received": True}
 
