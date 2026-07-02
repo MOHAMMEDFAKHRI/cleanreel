@@ -8,17 +8,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libglib2
 
 WORKDIR /app
 
-# Install deps first (better layer caching)
+# Install deps first (better layer caching).
+# CPU-only torch (much smaller than the default CUDA build) so LaMa fits a 2 GB box.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 COPY backend/requirements.txt /app/backend/requirements.txt
-# NOTE: this pulls torch (large). For a smaller CPU image, install the CPU wheel:
-#   RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 # App code
 COPY watermark_remover.py /app/watermark_remover.py
 COPY backend /app/backend
 
-ENV WR_ENGINE=auto
+# Neural (LaMa) ships in the image but stays OFF until you set WR_ENGINE=auto on a
+# 2 GB+ instance. Default 'classical' is memory-safe on any tier.
+ENV WR_ENGINE=classical
 # Set your real domain so robots/sitemap/SEO are correct:
 # ENV SITE_URL=https://your-domain.com
 
