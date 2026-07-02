@@ -373,7 +373,14 @@ async function poll(id, fails=0){
     $("status").textContent=j.message||j.status;
     if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block";
-      $("retry").style.display="block"; refreshMe(); return;}
+      $("retry").style.display="block"; refreshMe();
+      if(j.qc){const c=Math.round((j.qc.confidence||0)*100);
+        if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%)`; }
+        else { $("status").innerHTML=`Quality ${c}% — some of the watermark may remain. `+
+          `For a spotless result, highlight it on the canvas above and hit Re-run.`;
+          $("retry").style.display="block"; }
+      } else { $("status").textContent="Done"; }
+      return;}
     if(j.status==="error"){$("status").textContent="Failed: "+(j.error||""); return;}
     setTimeout(()=>poll(id),1200);
   }catch(e){

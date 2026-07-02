@@ -40,6 +40,7 @@ class Job:
     message: str = "Queued"
     result_path: str | None = None
     error: str | None = None
+    qc: dict | None = None          # quality report: confidence, residual_reduction, damage
     created: float = field(default_factory=time.time)
 
     def public(self):
@@ -105,6 +106,27 @@ class JobManager:
         job.progress = 0.25; job.message = f"Detected: {info['type']}. Cleaning..."
 
         seconds = PREVIEW_SECONDS if job.mode == "preview" else None
+
+        # Quality control: iterate on sampled frames to pick the best reverse-blend
+        # strength + mask, then render the full clip once with those params. Skip
+        # for pure opaque inpaint of a tiny area (nothing to tune) is handled inside
+        # autotune (it just scores the single option).
+        try:
+            qc_limit = int(seconds * fps) if seconds else int(min(n, 8 * fps))
+            tuned_info, tuned_mask, qc = wr.autotune(
+                video, info, mask, _inpainter(),
+                protect=params.get("protect", True), k=4, limit=qc_limit)
+            info, mask = tuned_info, tuned_mask
+            job.qc = qc
+            conf = int(round(qc.get("confidence", 0) * 100))
+            if qc.get("ok"):
+                job.message = f"Quality {conf}%. Rendering..."
+            else:
+                job.message = (f"Quality {conf}% — for a spotless result, mark the "
+                               f"watermark on the canvas and retry. Rendering best pass...")
+        except Exception as e:
+            # QC must never block delivery; fall back to the un-tuned params.
+            print("[qc] skipped:", e)
         # Resolution policy — keep the whole container within the free tier's
         # 512 MB budget. Upscaling source to 1080p pushed peak memory to ~470 MB
         # and the instance got OOM-killed ("Lost connection to the API").

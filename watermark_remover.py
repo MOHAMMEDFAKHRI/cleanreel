@@ -530,7 +530,132 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
     print(f"done -> {out}")
 
 
-def detect_image(path):
+# --------------------------------------------------------------------------- #
+# Quality control: score the clean, auto-tune, and report confidence
+# --------------------------------------------------------------------------- #
+def _hp_gray(bgr, sigma=6.0):
+    g = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8),
+                     cv2.COLOR_BGR2GRAY).astype(np.float32)
+    return g - cv2.GaussianBlur(g, (0, 0), sigma)
+
+def _clean_frame_static(f, B, meanf, gain, mask_bin, inp, protect=True):
+    """Clean ONE frame with the same static-mark logic as process_video (reverse-
+    blend the diffuse layer, gate to flat pixels to protect the subject, ROI inpaint)."""
+    h, w = f.shape[:2]
+    KW = max(15, (min(w, h) // 40) | 1); TAU = 12.0; C = 245.0
+    if B is not None and meanf is not None:
+        O = f.astype(np.float32); r = np.clip((C - O) / (C - meanf + 1e-3), 0, 3.0)
+        f = np.clip(O - gain * B * r, 0, 255).astype(np.uint8)
+    eff = mask_bin
+    if eff is not None and protect:
+        gg = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        eff = mask_bin & (_flatness(gg, KW) < TAU).astype(np.uint8)
+    if eff is not None:
+        eff = cv2.dilate(eff, np.ones((3, 3), np.uint8))
+    return _inpaint_smart(inp, f, eff)
+
+def _sample_frames(path, k=4, limit=None):
+    """Up to k frames spread evenly across the clip (or the first `limit` frames)."""
+    frames = list(frames_iter(path, limit))
+    if not frames:
+        return []
+    if len(frames) <= k:
+        return frames
+    idx = np.linspace(0, len(frames) - 1, k).round().astype(int)
+    return [frames[i] for i in idx]
+
+def _score_clean(orig, cleaned, mask_bin, B):
+    """Return (residual_reduction, damage) for one before/after frame pair.
+      residual_reduction: 1 - leftover watermark structure / original (higher=better)
+      damage:             over-smoothing + colour shift inside the region (lower=better)
+    """
+    m = mask_bin > 0
+    if m.sum() < 8:
+        return 1.0, 0.0
+    ho, hc = _hp_gray(orig), _hp_gray(cleaned)
+    if B is not None:
+        # Project the frame's high-pass onto the KNOWN watermark structure inside
+        # the mask. If the projection shrank, the mark is gone.
+        bg = B.mean(2).astype(np.float32)
+        bhp = (bg - cv2.GaussianBlur(bg, (0, 0), 6.0))[m]
+        nb = float(np.linalg.norm(bhp))
+        e_o = float(np.linalg.norm(ho[m])) + 1e-6
+        u = bhp / (nb + 1e-6)
+        before = abs(float((ho[m] * u).sum()))
+        after = abs(float((hc[m] * u).sum()))
+        # Guard: if the watermark structure carries ~no energy here, or explains
+        # almost none of the region's texture, we can't claim a removal — score it
+        # low rather than dividing ~0/~0 into a false "perfect".
+        if nb < 1e-3 or (before / e_o) < 0.05:
+            resid_red = 0.0
+        else:
+            resid_red = 1.0 - after / (before + 1e-6)
+    else:
+        # Inpaint-only (opaque logo / manual): a good fill makes interior texture
+        # resemble the surrounding ring — neither a flat hole nor a bright seam.
+        ring = (cv2.dilate(mask_bin, np.ones((15, 15), np.uint8)) > 0) & (~m)
+        e_in = float(np.sqrt((hc[m] ** 2).mean()))
+        e_rg = float(np.sqrt((hc[ring] ** 2).mean())) if ring.sum() else e_in
+        ratio = e_in / (e_rg + 1e-6)
+        resid_red = 1.0 - min(1.0, abs(ratio - 1.0))
+    # damage: interior flatter than its ring (lost detail) + mean colour shift
+    ring = (cv2.dilate(mask_bin, np.ones((15, 15), np.uint8)) > 0) & (~m)
+    cg = cv2.cvtColor(cleaned, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    tex_in = float(cg[m].std())
+    tex_rg = float(cg[ring].std()) if ring.sum() else tex_in
+    oversmooth = np.clip((tex_rg - tex_in) / (tex_rg + 1e-6) - 0.4, 0, 1)
+    dcol = 0.0
+    if ring.sum():
+        dcol = min(1.0, abs(float(cg[m].mean()) - float(cg[ring].mean())) / 40.0)
+    damage = float(np.clip(0.7 * oversmooth + 0.3 * dcol, 0, 1))
+    return float(np.clip(resid_red, -1, 1)), damage
+
+def quality_report(path, info, mask_bin, inp, gain=None, protect=True, k=4, limit=None):
+    """Clean k sampled frames with the given params and average the QC scores.
+    Returns dict(residual_reduction, damage, confidence, samples)."""
+    B = info.get("B"); meanf = info.get("meanf")
+    if gain is None:
+        gain = info.get("gain", 0.0)
+    frames = _sample_frames(path, k, limit)
+    if not frames:
+        return dict(residual_reduction=0.0, damage=1.0, confidence=0.0, samples=0)
+    rr, dm = [], []
+    for f in frames:
+        cleaned = _clean_frame_static(f.copy(), B, meanf, gain, mask_bin, inp, protect)
+        r, d = _score_clean(f, cleaned, mask_bin, B)
+        rr.append(r); dm.append(d)
+    resid = float(np.mean(rr)); damage = float(np.mean(dm))
+    confidence = float(np.clip(resid, 0, 1) * (1.0 - np.clip(damage, 0, 1)))
+    return dict(residual_reduction=round(resid, 3), damage=round(damage, 3),
+                confidence=round(confidence, 3), samples=len(frames))
+
+def autotune(path, info, mask_bin, inp, protect=True, k=4, limit=None):
+    """Iteratively refine: try a small grid of reverse-blend strengths and mask
+    dilations on sampled frames, keep the best-scoring combination. Returns
+    (best_info, best_mask, qc_report). This is the automated 'reiterate on
+    anomaly' step — done on samples so we render the full clip only once."""
+    B = info.get("B")
+    base_gain = float(info.get("gain", 0.0))
+    # gain only matters for reverse-blend; skip that axis when B is None
+    gain_mults = [1.0, 1.4] if B is not None else [1.0]
+    dilations = [0, 4]
+    best = None
+    for gm in gain_mults:
+        for dl in dilations:
+            m = mask_bin if dl == 0 else cv2.dilate(mask_bin, np.ones((dl * 2 + 1,) * 2, np.uint8))
+            g = base_gain * gm
+            qc = quality_report(path, info, m, inp, gain=g, protect=protect, k=k, limit=limit)
+            cand = (qc["confidence"], qc["residual_reduction"], -qc["damage"])
+            if best is None or cand > best[0]:
+                best = (cand, g, m, qc)
+    _, g, m, qc = best
+    out_info = dict(info); out_info["gain"] = g
+    qc = dict(qc); qc["engine"] = getattr(inp, "kind", "classical")
+    qc["ok"] = bool(qc["confidence"] >= 0.5 and qc["residual_reduction"] >= 0.4)
+    return out_info, m, qc
+
+
+def detect_image(path):  # noqa: E302  (QC section above)
     """Single-image tiled-watermark auto-detect -> mask (or None)."""
     img = cv2.imread(path)
     if img is None:
