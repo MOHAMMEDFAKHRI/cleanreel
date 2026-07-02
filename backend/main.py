@@ -129,14 +129,22 @@ def checkout(req: CheckoutReq, authorization: str | None = Header(default=None))
 async def stripe_webhook(request: Request):
     if not (stripe and STRIPE_SECRET and STRIPE_WEBHOOK_SECRET):
         raise HTTPException(503, "Webhook not configured.")
+    import json
     payload = await request.body()
     try:
-        event = stripe.Webhook.construct_event(
+        stripe.Webhook.construct_event(
             payload, request.headers.get("stripe-signature", ""), STRIPE_WEBHOOK_SECRET)
     except Exception:
         raise HTTPException(400, "Invalid signature.")
-    if event["type"] == "checkout.session.completed" and accounts.event_is_new(event["id"]):
-        obj = event["data"]["object"]; md = obj.get("metadata") or {}
+    # Parse the (verified) raw payload as a plain dict — avoids StripeObject
+    # attribute quirks (e.g. AttributeError on .get across library versions).
+    try:
+        event = json.loads(payload)
+    except Exception:
+        raise HTTPException(400, "Bad payload.")
+    if event.get("type") == "checkout.session.completed" and accounts.event_is_new(event.get("id", "")):
+        obj = (event.get("data") or {}).get("object") or {}
+        md = obj.get("metadata") or {}
         email = md.get("email") or obj.get("customer_email")
         credits = int(md.get("credits", 0) or 0)
         if email and credits:
