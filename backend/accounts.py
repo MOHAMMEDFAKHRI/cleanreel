@@ -160,7 +160,11 @@ def send_magic_link(email: str) -> str | None:
                           "subject": "Your CleanReel sign-in link", "html": html}).encode()
     req = urllib.request.Request("https://api.resend.com/emails", data=payload,
                                  headers={"Authorization": f"Bearer {RESEND_KEY}",
-                                          "Content-Type": "application/json"})
+                                          "Content-Type": "application/json",
+                                          "Accept": "application/json",
+                                          # A real User-Agent avoids Cloudflare error 1010
+                                          # (it bans python-urllib's default UA in front of Resend).
+                                          "User-Agent": "CleanReel/1.0 (+https://cleanreel.app)"})
     try:
         urllib.request.urlopen(req, timeout=10).read()
         return None
