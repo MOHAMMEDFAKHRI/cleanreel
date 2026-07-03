@@ -20,9 +20,16 @@ from dataclasses import dataclass, field, asdict
 # import the engine (one folder up)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import watermark_remover as wr   # noqa: E402
+import accounts                  # noqa: E402  (auto-refund of credits on failed exports)
 
 PREVIEW_SECONDS = 4
 MAX_EXPORT_SECONDS = 60          # single clip-length cap for this tier (upload == export)
+
+# Storage janitor: uploads & results are transient working files. Anything older
+# than STORAGE_TTL_HOURS is deleted. This number is a PROMISE made on
+# web/privacy.html ("deleted within ~6 hours") — change both together.
+STORAGE_TTL_HOURS = float(os.environ.get("STORAGE_TTL_HOURS", "6"))
+STORAGE_SWEEP_SECONDS = int(os.environ.get("STORAGE_SWEEP_SECONDS", str(30 * 60)))
 
 _INP = None
 def _inpainter():
@@ -80,6 +87,8 @@ class JobManager:
         os.makedirs(os.path.join(storage_dir, "results"), exist_ok=True)
         self._t = threading.Thread(target=self._worker, daemon=True)
         self._t.start()
+        self._jt = threading.Thread(target=self._janitor, daemon=True)
+        self._jt.start()
 
     # ---- public API ----
     def submit(self, mode: str, params: dict) -> str:
@@ -90,6 +99,45 @@ class JobManager:
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
+
+    def pending(self) -> int:
+        """Backpressure gauge: jobs waiting in the queue, plus the one the
+        worker is currently rendering (if any). create_job refuses new work
+        with a 429 when this gets deep."""
+        n = self.q.qsize()
+        if any(j.status == "processing" for j in list(self.jobs.values())):
+            n += 1
+        return n
+
+    # ---- storage janitor ----
+    def _janitor(self):
+        """Best-effort sweeper: every STORAGE_SWEEP_SECONDS, delete files under
+        storage/uploads and storage/results whose mtime is older than
+        STORAGE_TTL_HOURS (the retention window promised on web/privacy.html).
+        Strictly best-effort — any error is logged and retried next sweep;
+        it must never crash the app."""
+        while True:
+            try:
+                cutoff = time.time() - STORAGE_TTL_HOURS * 3600
+                removed = 0
+                for sub in ("uploads", "results"):
+                    d = os.path.join(self.storage, sub)
+                    if not os.path.isdir(d):
+                        continue
+                    for name in os.listdir(d):
+                        p = os.path.join(d, name)
+                        try:
+                            if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
+                                os.remove(p)
+                                removed += 1
+                        except OSError:
+                            pass          # locked / already gone — next sweep gets it
+                if removed:
+                    print(f"[janitor] removed {removed} stored file(s) older than "
+                          f"{STORAGE_TTL_HOURS:g}h", flush=True)
+            except Exception as e:
+                print("[janitor] sweep skipped:", e, flush=True)
+            time.sleep(STORAGE_SWEEP_SECONDS)
 
     # ---- worker ----
     def _worker(self):
@@ -108,6 +156,23 @@ class JobManager:
                 job.status = "error"; job.error = str(e)
                 job.message = "Failed"
                 traceback.print_exc()
+                # Paid export failed -> automatically give the credit back.
+                # create_job deducted it up-front and stamped the payer's email
+                # into params["refund_on_fail"] (exports only). The worker
+                # handles each job exactly once and a successful job never
+                # reaches this branch, so it cannot double-credit.
+                # Known gap: a hard process restart mid-job (deploy, OOM kill)
+                # never reaches this line either — those rare cases are
+                # handled manually via support/SQL.
+                email = params.get("refund_on_fail")
+                if email:
+                    try:
+                        bal = accounts.add_credits(email, 1)
+                        print(f"[refund] export job {job_id} failed -> returned "
+                              f"1 credit to {email} (balance now {bal})", flush=True)
+                    except Exception as rerr:
+                        print(f"[refund] FAILED to refund {email} for job "
+                              f"{job_id}: {rerr}", flush=True)
             finally:
                 self.q.task_done()
 

@@ -136,6 +136,9 @@
     </div>
     <div id="signinNudge" class="nudge" style="display:none"></div>
     <div id="buyPanel" class="buypanel" style="display:none"></div>
+    <p class="hint" style="margin:-6px 0 14px">Purchases are subject to our
+      <a href="terms.html" target="_blank" rel="noopener">Terms</a> &amp;
+      <a href="refunds.html" target="_blank" rel="noopener">Refund policy</a>.</p>
     <div class="modes" id="modes">
       <button class="tool mode active" data-task="remove">💧 Remove watermark</button>
       <button class="tool mode" data-task="erase">🧹 Erase objects</button>
@@ -204,7 +207,7 @@
         </div>
         <div id="blurWrap" style="display:none">
           <label class="chk" style="margin:6px 0"><input id="bFaces" type="checkbox" checked/> Blur faces</label>
-          <label class="chk" style="margin:6px 0"><input id="bPlates" type="checkbox"/> Blur license plates (beta)</label>
+          <label class="chk" style="margin:6px 0"><input id="bPlates" type="checkbox"/> Blur license plates (Beta)</label>
           <div class="optrow"><span class="pill">Style</span>
             <button class="tool bs active" data-style="blur">🌫 Blur</button>
             <button class="tool bs" data-style="pixelate">🟪 Pixelate</button>
@@ -216,7 +219,8 @@
           <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
         </div>
 
-        <label class="chk"><input id="owns" type="checkbox"/> I own or have the rights to edit this video</label>
+        <label class="chk"><input id="owns" type="checkbox"/> <span>I own or have the
+          <a href="terms.html" target="_blank" rel="noopener">rights</a> to edit this video</span></label>
         <div class="row">
           <button id="prev" class="btn ghost" disabled>👁 Free preview</button>
           <button id="exp" class="btn" disabled>⬇ Export full</button>
@@ -275,8 +279,12 @@
   <details><summary>What else can it do besides watermarks?</summary><p>Erase any unwanted object (brush it once — tracking follows it if it moves), enhance &amp; upscale soft or noisy clips, auto-reframe landscape video to 9:16, 1:1 or 4:5 with the subject kept in frame, and privacy-blur faces or license plates (auto-detected and tracked) plus any region you brush.</p></details>
 
   <footer>
-    CleanReel is for content you own or are licensed to edit. Uploads are processed only for your request.
-    <br/>© <span id="yr"></span> CleanReel · <a href="#faq">FAQ</a>
+    CleanReel is for content you own or are licensed to edit. Uploads are processed only for your request
+    and auto-deleted from our servers within about 6 hours.
+    <br/>© <span id="yr"></span> CleanReel · GREATER ADELAIDE SALES PTY LTD
+    <br/><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> ·
+    <a href="refunds.html">Refunds</a> · <a href="mailto:support@cleanreel.app">Contact</a> ·
+    <a href="mailto:abuse@cleanreel.app">Report abuse</a> · <a href="#faq">FAQ</a>
   </footer>
 </div>
 
@@ -639,6 +647,7 @@ async function run(kind){
         const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}
       }
       else if(r.status===402){ $("status").textContent="Out of export credits — grab a pack below."; $("buy").click(); }
+      else if(r.status===429){ $("status").textContent=(d&&d.detail)||"We're at capacity right now — please try again in a few minutes."; }
       else $("status").textContent="Error: "+(d.detail||"failed");
       return;
     }

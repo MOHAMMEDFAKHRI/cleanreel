@@ -16,7 +16,7 @@ Run:
 PROD notes are inline. Credits/auth here are in-memory stubs to demonstrate the
 free-vs-paid gate; wire Stripe + real auth before launch.
 """
-import os, uuid, shutil
+import os, uuid, shutil, time, threading
 from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
@@ -47,11 +47,55 @@ if stripe and STRIPE_SECRET:
     stripe.api_key = STRIPE_SECRET
 
 app = FastAPI(title="CleanReel API", version="0.2")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# CORS is locked to the public site. For local dev, add your dev origin here
+# (e.g. "http://localhost:8000" / "http://127.0.0.1:5500") — do NOT ship "*".
+app.add_middleware(CORSMiddleware,
+                   allow_origins=["https://cleanreel.app", "https://www.cleanreel.app"],
+                   allow_methods=["*"], allow_headers=["*"])
 accounts.init_db()
 
 manager = JobManager(STORAGE)
 FILES: dict[str, dict] = {}      # file_id -> {path, w, h, seconds}
+
+# --------------------------------------------------------------------------- #
+# Abuse guards — tiny, in-memory, single-process (matches the one-box deploy).
+# If you ever scale past one instance, swap this for Redis.
+# --------------------------------------------------------------------------- #
+MAX_QUEUE_DEPTH      = int(os.environ.get("MAX_QUEUE_DEPTH", "6"))       # jobs queued+running
+RATE_AUTH_PER_HOUR   = int(os.environ.get("RATE_AUTH_PER_HOUR", "5"))    # protects the Resend quota
+RATE_UPLOAD_PER_HOUR = int(os.environ.get("RATE_UPLOAD_PER_HOUR", "20"))
+RATE_JOBS_PER_HOUR   = int(os.environ.get("RATE_JOBS_PER_HOUR", "40"))
+
+_rl_hits: dict[tuple, list[float]] = {}   # (scope, ip) -> recent request timestamps
+_rl_lock = threading.Lock()
+
+def _client_ip(request: Request | None) -> str:
+    """Client identity for rate limiting. Render fronts us with a proxy, so the
+    first X-Forwarded-For hop is the real client; the socket peer is the
+    fallback for local/dev runs."""
+    if request is None:
+        return "?"
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+def rate_limit(request: Request | None, scope: str, limit: int, window: float = 3600.0):
+    """Sliding-window limiter: allow at most `limit` hits per `window` seconds
+    per client IP for this scope; raise a friendly 429 past that."""
+    now = time.time()
+    key = (scope, _client_ip(request))
+    with _rl_lock:
+        hits = [t for t in _rl_hits.get(key, []) if now - t < window]
+        if len(hits) >= limit:
+            _rl_hits[key] = hits
+            raise HTTPException(429, "You're doing that a bit too often — "
+                                     "please wait a while and try again.")
+        hits.append(now)
+        _rl_hits[key] = hits
+        if len(_rl_hits) > 20000:         # opportunistic GC: drop idle clients
+            for k in [k for k, v in _rl_hits.items() if not v or now - v[-1] >= window]:
+                _rl_hits.pop(k, None)
 
 
 def current_user(authorization: str | None) -> str | None:
@@ -76,8 +120,9 @@ class CheckoutReq(BaseModel):
     pack: str
 
 @app.post("/api/auth/request")
-def auth_request(req: EmailReq):
+def auth_request(req: EmailReq, request: Request):
     """Email the user a one-click magic-link to sign in."""
+    rate_limit(request, "auth", RATE_AUTH_PER_HOUR)   # protects the Resend email quota
     email = (req.email or "").strip().lower()
     if "@" not in email or "." not in email.split("@")[-1] or len(email) > 200:
         raise HTTPException(400, "Please enter a valid email address.")
@@ -155,7 +200,8 @@ async def stripe_webhook(request: Request):
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(request: Request, file: UploadFile = File(...)):
+    rate_limit(request, "upload", RATE_UPLOAD_PER_HOUR)
     ext = os.path.splitext(file.filename or "")[1].lower() or ".mp4"
     if ext not in (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"):
         raise HTTPException(400, "Unsupported video format.")
@@ -292,7 +338,9 @@ class JobRequest(BaseModel):
 
 
 @app.post("/api/jobs")
-def create_job(req: JobRequest, authorization: str | None = Header(default=None)):
+def create_job(req: JobRequest, request: Request,
+               authorization: str | None = Header(default=None)):
+    rate_limit(request, "jobs", RATE_JOBS_PER_HOUR)
     if not req.owns_rights:
         raise HTTPException(403, "You must confirm you own/have rights to edit this video.")
     meta = FILES.get(req.file_id)
@@ -324,6 +372,14 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
         if req.focus is not None and len(req.focus) != 2:
             raise HTTPException(400, "focus must be [x, y] with 0..1 values.")
 
+    # Backpressure: one worker renders one job at a time, so a deep queue means
+    # a silent multi-hour wait. Refuse early instead — and BEFORE any credit is
+    # deducted, so a rejected request never costs the customer anything.
+    if manager.pending() >= MAX_QUEUE_DEPTH:
+        raise HTTPException(429, "We're at capacity right now — please try again "
+                                 "in a few minutes.")
+
+    refund_email = None
     if req.mode == "export":                 # preview stays free & anonymous
         if meta["seconds"] > MAX_EXPORT_SECONDS:
             raise HTTPException(413, f"Export limited to {MAX_EXPORT_SECONDS}s in this tier.")
@@ -332,12 +388,16 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
             raise HTTPException(401, "Please sign in to export.")
         if not accounts.use_credit(email):
             raise HTTPException(402, "Out of export credits. Buy a pack to export the full video.")
+        refund_email = email                 # paid: worker refunds this credit on failure
 
     params = {
         "video_path": meta["path"], "task": task,
         "boxes": [tuple(b) for b in req.boxes] if req.boxes else None,
         "upscale": req.upscale, "protect": req.protect,
     }
+    if refund_email:
+        # If the render fails, jobs.JobManager._worker returns this credit.
+        params["refund_on_fail"] = refund_email
     if task in ("remove", "erase", "blur") and req.mask:
         raw = base64.b64decode(req.mask.split(",", 1)[-1])     # tolerate data: URL prefix
         mpath = os.path.join(UPLOADS, f"{req.file_id}_{uuid.uuid4().hex[:8]}_mask.png")

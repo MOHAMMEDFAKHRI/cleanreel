@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Privacy Policy — CleanReel</title>
+<meta name="description" content="What CleanReel collects (your email and the videos you upload), who processes it, and how quickly uploads are deleted — within about 6 hours."/>
+<link rel="canonical" href="https://cleanreel.app/privacy.html"/>
+<meta name="robots" content="index,follow"/>
+<style>
+  :root{--bg:#0b0e1a;--card:#151a33;--line:#252b4d;--ink:#eef1fb;--mut:#9aa2c0;
+        --acc:#6c8cff;--acc2:#9a6cff;--ok:#36d39b}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.65 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);
+       background:radial-gradient(1200px 600px at 70% -10%,#1b2350 0,var(--bg) 55%)}
+  a{color:var(--acc);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:800px;margin:0 auto;padding:0 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:center;padding:20px 0;flex-wrap:wrap;gap:10px}
+  .logo{font-weight:800;font-size:20px;color:var(--ink)} .logo:hover{text-decoration:none}
+  .logo span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  nav a{color:var(--mut);margin-left:16px;font-size:15px} nav a:hover{color:var(--ink);text-decoration:none}
+  h1{font-size:clamp(26px,4vw,36px);line-height:1.15;margin:24px 0 6px}
+  .updated{color:var(--mut);font-size:14px;margin:0 0 16px}
+  h2{font-size:19px;margin:28px 0 8px}
+  p,li{color:var(--mut);font-size:15.5px} li{margin:6px 0}
+  b,strong{color:var(--ink)}
+  .note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;
+        color:var(--mut);font-size:14.5px;margin:18px 0}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:15px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;color:var(--mut);vertical-align:top}
+  th{color:var(--ink);background:var(--card)}
+  footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line);margin-top:44px;padding:22px 0 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/">✨ Clean<span>Reel</span></a>
+    <nav><a href="/">Home</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="refunds.html">Refunds</a></nav>
+  </header>
+
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated 4 July 2026</p>
+  <div class="note">This is provided in good faith and isn't legal advice; we recommend a lawyer review for your situation.</div>
+
+  <p>CleanReel (cleanreel.app) is operated by <b>GREATER ADELAIDE SALES PTY LTD</b>, an Australian
+     company. The short version: we collect the minimum needed to run the tool — your email and the
+     video you're editing — <b>your videos are deleted from our server within about 6 hours</b>, we
+     never see your card number, and there's no third-party ad tracking on the site.</p>
+
+  <h2>1. What we collect</h2>
+  <ul>
+    <li><b>Your email address</b> — used to send your magic sign-in link and to keep your credit
+        balance attached to your account. Previews don't need an account at all.</li>
+    <li><b>The videos you upload</b> — processed only to produce the result you asked for
+        (preview or export). We don't use your videos for anything else, including training AI models.</li>
+    <li><b>Payment confirmation</b> — payments are handled entirely by <b>Stripe</b>. Stripe tells
+        us that you paid and which credit pack you bought; <b>we never see or store your card
+        number</b>.</li>
+    <li><b>Basic technical logs</b> — like any web service, our servers see IP addresses and
+        request metadata, which we use only for security, debugging and rate limiting.</li>
+  </ul>
+
+  <h2>2. How long we keep it</h2>
+  <ul>
+    <li><b>Uploaded files and generated results are automatically deleted from our server within
+        about 6 hours.</b> Download your result promptly — after that window it's gone.</li>
+    <li>Your <b>email address and credit balance</b> are kept while you have an account, so your
+        credits are there when you come back.</li>
+    <li>Stripe retains payment records according to its own policies (financial-record laws
+        require some retention).</li>
+  </ul>
+
+  <h2>3. Who processes it for us (sub-processors)</h2>
+  <table>
+    <tr><th>Provider</th><th>What it does with your data</th></tr>
+    <tr><td>Render</td><td>Hosts the API and does the video processing (your uploads live here, briefly).</td></tr>
+    <tr><td>Neon</td><td>Database storing your email and credit balance.</td></tr>
+    <tr><td>Stripe</td><td>Payment processing (card details go to Stripe, not to us).</td></tr>
+    <tr><td>Resend</td><td>Sends the magic-link sign-in emails.</td></tr>
+    <tr><td>Netlify</td><td>Serves the website itself (static pages / CDN).</td></tr>
+  </table>
+  <p>These providers act on our instructions. Some are located overseas (mainly the United States),
+     so your information may be stored or processed outside Australia.</p>
+
+  <h2>4. In your browser</h2>
+  <p>The only thing CleanReel keeps in your browser is a <b>signed session token</b> (localStorage
+     key <code>cr_auth</code>) so you stay signed in on that device. Signing out removes it.
+     We don't run third-party advertising trackers or analytics cookies.</p>
+
+  <h2>5. What we never do</h2>
+  <ul>
+    <li>We don't sell your personal information.</li>
+    <li>We don't use your videos for anything except producing your result.</li>
+    <li>We don't send marketing email — the only emails you get are the sign-in links you request.</li>
+  </ul>
+
+  <h2>6. Your rights</h2>
+  <p>Email <a href="mailto:support@cleanreel.app">support@cleanreel.app</a> from your sign-in
+     address to <b>access or delete your data</b> — we'll show you what we hold (your email and
+     credit balance; uploads are already auto-deleted) or delete your account record. We handle
+     personal information in line with Australian privacy law, and if you're unhappy with our
+     response you can complain to the OAIC (oaic.gov.au).</p>
+
+  <h2>7. Changes and contact</h2>
+  <p>If we change how we handle your data, we'll update this page and its date. Questions:
+     <a href="mailto:support@cleanreel.app">support@cleanreel.app</a> · misuse reports:
+     <a href="mailto:abuse@cleanreel.app">abuse@cleanreel.app</a>.</p>
+
+  <footer>© <span id="yr"></span> CleanReel · GREATER ADELAIDE SALES PTY LTD ·
+    <a href="/">Home</a> · <a href="terms.html">Terms</a> · <a href="refunds.html">Refunds</a> ·
+    <a href="mailto:support@cleanreel.app">support@cleanreel.app</a></footer>
+</div>
+<script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+</body>
+</html>
