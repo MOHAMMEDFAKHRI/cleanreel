@@ -182,7 +182,7 @@ async def upload(file: UploadFile = File(...)):
     if seconds > MAX_UPLOAD_SECONDS:
         os.remove(path)
         raise HTTPException(413, f"Video too long ({seconds}s). MVP limit is {MAX_UPLOAD_SECONDS}s.")
-    FILES[fid] = {"path": path, "w": w, "h": h, "seconds": seconds}
+    FILES[fid] = {"path": path, "w": w, "h": h, "seconds": seconds, "fps": fps}
     return {"file_id": fid, "width": w, "height": h, "seconds": seconds}
 
 
@@ -209,6 +209,26 @@ def reference(fid: str):
     return Response(cache, media_type="image/jpeg")
 
 
+@app.get("/api/frame/{fid}")
+def frame(fid: str):
+    """A clean sharp still with NO highlight — the canvas for erase/reframe modes.
+    Also remembers the frame's time so tracked erases template-match the exact
+    frame the user brushed on."""
+    meta = FILES.get(fid)
+    if not meta:
+        raise HTTPException(404, "Unknown file_id (upload first).")
+    cache = meta.get("_frame")
+    if cache is None:
+        f, idx = wr.sharpest_frame(meta["path"], with_index=True)
+        if f is None:
+            raise HTTPException(400, "Could not read a frame from that video.")
+        ok, buf = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 86])
+        cache = buf.tobytes()
+        meta["_frame"] = cache
+        meta["_sharp_t"] = idx / max(meta.get("fps") or 24.0, 1e-6)
+    return Response(cache, media_type="image/jpeg")
+
+
 @app.post("/api/autodetect/{fid}")
 def autodetect(fid: str):
     """Run auto-detection and return its mask as a PNG (white = watermark)."""
@@ -229,12 +249,19 @@ def autodetect(fid: str):
 class JobRequest(BaseModel):
     file_id: str
     mode: str = "preview"                 # 'preview' (free) | 'export' (paid)
+    task: str = "remove"                  # remove | erase | enhance | reframe
     owns_rights: bool = False
     boxes: list[list[int]] | None = None  # [[x,y,w,h], ...]
     mask: str | None = None               # base64 PNG (white = remove) from the canvas editor
     auto: bool = True
     upscale: bool = True
     protect: bool = True
+    track: bool = False                   # erase: follow a moving object
+    scale: float = 1.0                    # enhance: 1.0 | 2.0
+    denoise: bool = True                  # enhance: hqdn3d + deblock
+    strength: float = 0.6                 # enhance: sharpen strength 0..1
+    ratio: str = "9:16"                   # reframe: 9:16 | 1:1 | 4:5 ...
+    fit: str = "crop"                     # reframe: crop | blur
 
 
 @app.post("/api/jobs")
@@ -246,6 +273,18 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
         raise HTTPException(404, "Unknown file_id (upload first).")
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
+    task = (req.task or "remove").lower()
+    if task not in ("remove", "erase", "enhance", "reframe"):
+        raise HTTPException(400, "task must be remove | erase | enhance | reframe.")
+    if task == "erase" and not (req.mask or req.boxes):
+        raise HTTPException(400, "Brush over what you want erased first.")
+    if task == "reframe":
+        try:
+            wr.parse_ratio(req.ratio)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if req.fit not in ("crop", "blur"):
+            raise HTTPException(400, "fit must be 'crop' or 'blur'.")
 
     if req.mode == "export":                 # preview stays free & anonymous
         if meta["seconds"] > MAX_EXPORT_SECONDS:
@@ -257,19 +296,33 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
             raise HTTPException(402, "Out of export credits. Buy a pack to export the full video.")
 
     params = {
-        "video_path": meta["path"],
+        "video_path": meta["path"], "task": task,
         "boxes": [tuple(b) for b in req.boxes] if req.boxes else None,
         "upscale": req.upscale, "protect": req.protect,
     }
-    if req.mask:
+    if task in ("remove", "erase") and req.mask:
         raw = base64.b64decode(req.mask.split(",", 1)[-1])     # tolerate data: URL prefix
-        mpath = os.path.join(UPLOADS, req.file_id + "_mask.png")
+        mpath = os.path.join(UPLOADS, f"{req.file_id}_{uuid.uuid4().hex[:8]}_mask.png")
         with open(mpath, "wb") as mf:
             mf.write(raw)
-        meanf, std_gray = _mean_std(meta)
-        params.update(mask_path=mpath, meanf=meanf, std_gray=std_gray)
+        params["mask_path"] = mpath
+        if task == "remove":
+            # only the remove pipeline needs the (expensive) temporal mean/std —
+            # erase always treats the marked region as opaque.
+            meanf, std_gray = _mean_std(meta)
+            params.update(meanf=meanf, std_gray=std_gray)
+    if task == "erase":
+        params["track"] = bool(req.track)
+        params["track_ref"] = meta.get("_sharp_t")   # frame the user brushed on
+    elif task == "enhance":
+        params["scale"] = 2.0 if (req.scale or 1.0) >= 1.5 else 1.0
+        params["denoise"] = bool(req.denoise)
+        params["strength"] = max(0.0, min(1.0, float(req.strength)))
+    elif task == "reframe":
+        params["ratio"] = req.ratio
+        params["fit"] = req.fit
     job_id = manager.submit(req.mode, params)
-    return {"job_id": job_id, "mode": req.mode}
+    return {"job_id": job_id, "mode": req.mode, "task": task}
 
 
 @app.get("/api/jobs/{job_id}")

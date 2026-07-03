@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>CleanReel — Remove Watermarks from Video Online (Free Preview)</title>
-<meta name="description" content="Remove watermarks, logos and overlays from videos you own. AI-powered, keeps faces and detail sharp, audio preserved. Free preview, low-cost export — no software to install."/>
+<title>CleanReel — AI Video Studio: Remove Watermarks, Erase Objects, Enhance & Reframe</title>
+<meta name="description" content="Remove watermarks, erase unwanted objects, enhance &amp; upscale, or auto-reframe videos you own to 9:16. AI-powered, keeps faces sharp, audio preserved. Free preview, low-cost export — no software to install."/>
 <link rel="canonical" href="https://cleanreel.app/"/>
 <meta name="robots" content="index,follow"/>
 <meta property="og:type" content="website"/>
-<meta property="og:title" content="CleanReel — Remove Watermarks from Video Online"/>
-<meta property="og:description" content="AI watermark remover for videos you own. Free preview, sharp results, audio kept."/>
+<meta property="og:title" content="CleanReel — Remove Watermarks, Erase Objects &amp; Reframe Video Online"/>
+<meta property="og:description" content="AI video studio for clips you own: watermark removal, object eraser, enhance/upscale, auto-reframe. Free preview, audio kept."/>
 <meta property="og:url" content="https://cleanreel.app/"/>
 <meta name="twitter:card" content="summary_large_image"/>
-<meta name="twitter:title" content="CleanReel — Remove Watermarks from Video Online"/>
-<meta name="twitter:description" content="AI watermark remover for videos you own. Free preview, sharp results."/>
+<meta name="twitter:title" content="CleanReel — Remove Watermarks, Erase Objects &amp; Reframe Video Online"/>
+<meta name="twitter:description" content="AI video studio for clips you own. Free preview, sharp results."/>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"CleanReel",
 "applicationCategory":"MultimediaApplication","operatingSystem":"Web",
-"description":"Online AI tool to remove watermarks, logos and overlays from videos you own.",
+"description":"Online AI video studio for clips you own: remove watermarks, erase objects, enhance/upscale, and auto-reframe to vertical or square.",
 "offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Free preview; low-cost export"}}
 </script>
 <script type="application/ld+json">
@@ -82,6 +82,9 @@
   .pack{background:#0f1430;border:1px solid var(--line);border-radius:12px;padding:12px 16px;cursor:pointer;text-align:left;color:var(--ink)}
   .pack b{display:block;font-size:16px} .pack span{color:var(--mut);font-size:13px}
   .pack:hover{border-color:var(--acc)}
+  .modes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+  .modes .tool{padding:9px 14px;font-weight:600}
+  .optrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
 </style>
 </head>
 <body>
@@ -92,10 +95,10 @@
   </header>
 
   <section class="hero">
-    <h1>Remove watermarks from <span>your videos</span>, free to preview</h1>
-    <p>Upload a short clip you own, mark the overlay (or let our AI find it), and download it clean —
-       faces stay sharp, audio is kept, nothing re-watermarked.</p>
-    <a class="btn" href="#tool">Clean a video →</a>
+    <h1>Remove watermarks — or <span>repurpose any video</span> you own</h1>
+    <p>Wipe watermarks and unwanted objects, sharpen &amp; upscale, or auto-reframe to vertical —
+       faces stay sharp, audio is kept, nothing re-watermarked. Free preview first.</p>
+    <a class="btn" href="#tool">Open the studio →</a>
   </section>
 
   <section id="tool" class="card">
@@ -111,6 +114,12 @@
       </span>
     </div>
     <div id="buyPanel" class="buypanel" style="display:none"></div>
+    <div class="modes" id="modes">
+      <button class="tool mode active" data-task="remove">💧 Remove watermark</button>
+      <button class="tool mode" data-task="erase">🧹 Erase objects</button>
+      <button class="tool mode" data-task="enhance">✨ Enhance</button>
+      <button class="tool mode" data-task="reframe">📱 Reframe</button>
+    </div>
     <div class="grid2">
       <div>
         <p class="step-tag">Step 1 · Upload</p>
@@ -120,7 +129,7 @@
           <span id="meta" class="pill"></span>
         </div>
 
-        <p class="step-tag" style="margin-top:18px">Step 2 · Highlight the watermark</p>
+        <p class="step-tag" style="margin-top:18px" id="step2Tag">Step 2 · Highlight the watermark</p>
         <p id="needUpload" class="hint">Upload a video and I'll show a frame with the watermark highlighted for you to mark.</p>
         <div id="editorWrap" style="display:none">
           <div class="editor" id="editor">
@@ -136,7 +145,32 @@
             <button class="tool" id="tAuto">✨ Auto-detect</button>
             <button class="tool" id="tClear">Clear</button>
           </div>
-          <p class="hint">Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.</p>
+          <p class="hint" id="editorHint">Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.</p>
+          <label class="chk" id="trackWrap" style="display:none"><input id="trackChk" type="checkbox"/> Moving object — track it across the video</label>
+        </div>
+        <div id="enhanceWrap" style="display:none">
+          <div class="optrow"><span class="pill">Scale</span>
+            <button class="tool sc active" data-scale="1">1× (same size)</button>
+            <button class="tool sc" data-scale="2">2× upscale</button>
+          </div>
+          <label class="chk" style="margin:6px 0"><input id="denoise" type="checkbox" checked/> Denoise &amp; deblock (cleans compression artifacts)</label>
+          <div class="optrow"><span class="pill">Sharpen</span>
+            <input id="sharpAmt" type="range" min="0" max="100" value="60"/>
+            <span class="pill" id="sharpVal">60%</span>
+          </div>
+          <p class="hint">Re-renders your clip through the enhancement chain: denoise → upscale → adaptive sharpen. Output resolution is capped to a server-safe size.</p>
+        </div>
+        <div id="reframeWrap" style="display:none">
+          <div class="optrow"><span class="pill">Aspect</span>
+            <button class="tool rt active" data-ratio="9:16">9:16 vertical</button>
+            <button class="tool rt" data-ratio="1:1">1:1 square</button>
+            <button class="tool rt" data-ratio="4:5">4:5 portrait</button>
+          </div>
+          <div class="optrow"><span class="pill">Fill</span>
+            <button class="tool ft active" data-fit="crop">🎯 Smart crop (follows the subject)</button>
+            <button class="tool ft" data-fit="blur">🌫 Fit + blurred bars</button>
+          </div>
+          <p class="hint">Smart crop keeps faces &amp; motion centered with a smooth virtual camera. Pick blurred bars when the whole frame must stay visible.</p>
         </div>
 
         <label class="chk"><input id="owns" type="checkbox"/> I own or have the rights to edit this video</label>
@@ -159,19 +193,19 @@
 
   <h2 class="sec" id="how">How it works</h2>
   <div class="steps">
-    <div class="card"><b>Upload &amp; mark</b><p style="color:var(--mut)">Drop in a short video. Brush over the watermark or hit auto-detect.</p></div>
-    <div class="card"><b>AI removes it</b><p style="color:var(--mut)">It adapts to tiled stamps, corner logos, or moving marks — and protects faces.</p></div>
-    <div class="card"><b>Preview &amp; export</b><p style="color:var(--mut)">See a free preview, then export the full clean video with audio intact.</p></div>
+    <div class="card"><b>Upload &amp; pick a mode</b><p style="color:var(--mut)">Remove a watermark, erase any object, enhance &amp; upscale, or reframe to a new shape.</p></div>
+    <div class="card"><b>Mark or tweak</b><p style="color:var(--mut)">Brush the region (remove/erase) or set your options (enhance/reframe). AI does the rest.</p></div>
+    <div class="card"><b>Preview &amp; export</b><p style="color:var(--mut)">See a free preview, then export the full video with audio intact.</p></div>
   </div>
 
   <h2 class="sec">Why CleanReel</h2>
   <div class="feat">
-    <div class="card"><h3>Adaptive</h3><p>Auto-detects tiled watermarks, corner logos, even moving/animated marks.</p></div>
-    <div class="card"><h3>Keeps detail</h3><p>Recovers the real footage where it can; protects faces, hands and texture.</p></div>
-    <div class="card"><h3>Audio preserved</h3><p>Your original sound is copied through untouched. No re-watermarking.</p></div>
-    <div class="card"><h3>Free preview</h3><p>Always check the result before you spend anything.</p></div>
-    <div class="card"><h3>Low cost</h3><p>Full HD exports use small credits — among the cheapest anywhere.</p></div>
-    <div class="card"><h3>No install</h3><p>Runs in your browser. Nothing to download.</p></div>
+    <div class="card"><h3>Adaptive removal</h3><p>Auto-detects tiled watermarks, corner logos, even moving/animated marks.</p></div>
+    <div class="card"><h3>Object eraser</h3><p>Brush over a logo, timestamp, sign or bystander — gone in every frame.</p></div>
+    <div class="card"><h3>Enhance &amp; upscale</h3><p>Denoise, deblock and adaptive sharpening, with optional 2× upscale.</p></div>
+    <div class="card"><h3>Auto-reframe</h3><p>9:16, 1:1 or 4:5 with the subject kept centered — or blurred-bar fit.</p></div>
+    <div class="card"><h3>Keeps detail &amp; audio</h3><p>Faces and texture protected; your original sound is copied through.</p></div>
+    <div class="card"><h3>Free preview, low cost</h3><p>Check the result first; full exports use small credits.</p></div>
   </div>
 
   <h2 class="sec" id="faq">FAQ</h2>
@@ -179,6 +213,7 @@
   <details><summary>Is it free?</summary><p>Previews are free. Full exports use low-cost credits that cover GPU processing.</p></details>
   <details><summary>Will it blur my video or ruin faces?</summary><p>No — faces and detailed areas are protected and your audio is preserved, so the subject stays sharp.</p></details>
   <details><summary>What can I legally remove?</summary><p>Only content you own or are licensed to edit — e.g. your own free-tier exports, your old logo, or stray text/timecode.</p></details>
+  <details><summary>What else can it do besides watermarks?</summary><p>Erase any unwanted object (brush it once — tracking follows it if it moves), enhance &amp; upscale soft or noisy clips, and auto-reframe landscape video to 9:16, 1:1 or 4:5 with the subject kept in frame.</p></details>
 
   <footer>
     CleanReel is for content you own or are licensed to edit. Uploads are processed only for your request.
@@ -193,6 +228,47 @@ const API = (window.API_BASE || "");
 const $ = id => document.getElementById(id);
 $("yr").textContent = new Date().getFullYear();
 let fileId=null, vw=0, vh=0;
+
+/* ---------- modes (tasks) ---------- */
+let task='remove';                 // remove | erase | enhance | reframe
+let enhScale=1, ratioSel='9:16', fitSel='crop';
+const TASK_COPY={
+  remove:{tag:'Step 2 · Highlight the watermark',
+    need:'Upload a video and I\'ll show a frame with the watermark highlighted for you to mark.',
+    hint:'Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.'},
+  erase:{tag:'Step 2 · Mark what to erase',
+    need:'Upload a video and I\'ll show a sharp frame to brush on.',
+    hint:'Brush over anything you want gone — a logo, timestamp, sign or bystander. If it moves, tick <b>Moving object</b> below and it\'s tracked across the whole video.'},
+  enhance:{tag:'Step 2 · Enhancement options',
+    need:'Upload a video to enhance — options are below.'},
+  reframe:{tag:'Step 2 · Pick the new shape',
+    need:'Upload a video to reframe — pick the aspect below.'}
+};
+function setTask(t){
+  task=t;
+  document.querySelectorAll('#modes .mode').forEach(b=>b.classList.toggle('active',b.dataset.task===t));
+  const ed=(t==='remove'||t==='erase');
+  $("step2Tag").textContent=TASK_COPY[t].tag;
+  $("needUpload").innerHTML=TASK_COPY[t].need;
+  $("needUpload").style.display=(ed&&!fileId)?'block':'none';
+  $("editorWrap").style.display=(ed&&fileId)?'block':'none';
+  $("enhanceWrap").style.display=(t==='enhance')?'block':'none';
+  $("reframeWrap").style.display=(t==='reframe')?'block':'none';
+  $("tAuto").style.display=(t==='remove')?'':'none';
+  $("trackWrap").style.display=(t==='erase')?'flex':'none';
+  if(ed){ $("editorHint").innerHTML=TASK_COPY[t].hint; if(fileId) loadBase(); }
+}
+document.querySelectorAll('#modes .mode').forEach(b=>b.onclick=()=>setTask(b.dataset.task));
+document.querySelectorAll('#enhanceWrap .sc').forEach(b=>b.onclick=()=>{
+  enhScale=+b.dataset.scale;
+  document.querySelectorAll('#enhanceWrap .sc').forEach(x=>x.classList.toggle('active',x===b)); });
+document.querySelectorAll('#reframeWrap .rt').forEach(b=>b.onclick=()=>{
+  ratioSel=b.dataset.ratio;
+  document.querySelectorAll('#reframeWrap .rt').forEach(x=>x.classList.toggle('active',x===b)); });
+document.querySelectorAll('#reframeWrap .ft').forEach(b=>b.onclick=()=>{
+  fitSel=b.dataset.fit;
+  document.querySelectorAll('#reframeWrap .ft').forEach(x=>x.classList.toggle('active',x===b)); });
+$("sharpAmt").oninput=()=>$("sharpVal").textContent=$("sharpAmt").value+'%';
 
 /* ---------- accounts (magic-link) ---------- */
 let auth = JSON.parse(localStorage.getItem('cr_auth')||'null');   // {session,email,credits}
@@ -300,10 +376,15 @@ function maskPNG(){ const t=document.createElement("canvas"); t.width=maskC.widt
   for(let i=0;i<src.length;i+=4){ const on=src[i+3]>10?255:0; o[i]=o[i+1]=o[i+2]=on; o[i+3]=255; }
   tx.putImageData(out,0,0); return t.toDataURL("image/png"); }
 
-async function loadReference(){
-  try{ const r=await fetch(API+`/api/reference/${fileId}`); const b=await r.blob();
+/* remove mode shows the highlighted reference; erase mode shows the sharp frame */
+let baseCache={};
+async function loadBase(){
+  const kind=(task==='remove')?'reference':'frame', key=fileId+':'+kind;
+  try{
+    if(!baseCache[key]){ const r=await fetch(API+`/api/${kind}/${fileId}`);
+      if(!r.ok) return; baseCache[key]=URL.createObjectURL(await r.blob()); }
     const img=new Image(); img.onload=()=>rctx.drawImage(img,0,0,refC.width,refC.height);
-    img.src=URL.createObjectURL(b);
+    img.src=baseCache[key];
   }catch(e){}
 }
 $("tAuto").onclick=async()=>{
@@ -330,23 +411,29 @@ $("up").onclick = async () => {
     const r=await fetch(API+"/api/upload",{method:"POST",body:fd});
     const d=await r.json();
     if(!r.ok){$("meta").textContent="Error: "+(d.detail||"upload failed");return;}
-    fileId=d.file_id; vw=d.width; vh=d.height;
+    fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
     $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
     refC.width=maskC.width=vw; refC.height=maskC.height=vh;
     mctx.clearRect(0,0,vw,vh);
-    $("needUpload").style.display="none"; $("editorWrap").style.display="block";
     $("prev").disabled=false; $("exp").disabled=false;
-    loadReference();
+    setTask(task);                       // reveals the right controls + loads the canvas
   }catch(e){$("meta").textContent="Network error — is the API URL set in config.js?";}
 };
 
-async function run(mode){
+async function run(kind){
   if(!fileId){alert("Upload a video first.");return;}
   if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
+  const body={file_id:fileId,mode:kind,owns_rights:true,protect:true,upscale:true,task};
+  if(task==='remove'){ if(!maskEmpty()) body.mask=maskPNG(); }
+  else if(task==='erase'){
+    if(maskEmpty()){alert("Brush over what you want erased first.");return;}
+    body.mask=maskPNG(); body.track=$("trackChk").checked;
+  } else if(task==='enhance'){
+    body.scale=enhScale; body.denoise=$("denoise").checked;
+    body.strength=(+$("sharpAmt").value)/100;
+  } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel; }
   $("prog").style.width="6%"; $("status").textContent="Submitting…";
   $("dl").style.display="none"; $("retry").style.display="none";
-  const body={file_id:fileId,mode,owns_rights:true,protect:true,upscale:true};
-  if(!maskEmpty()) body.mask=maskPNG();
   try{
     const r=await fetch(API+"/api/jobs",{method:"POST",
       headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify(body)});
@@ -358,13 +445,13 @@ async function run(mode){
       else $("status").textContent="Error: "+(d.detail||"failed");
       return;
     }
-    poll(d.job_id);
+    poll(d.job_id, task);
   }catch(e){$("status").textContent="Network error.";}
 }
 $("prev").onclick=()=>run("preview");
 $("exp").onclick=()=>run("export");
 
-async function poll(id, fails=0){
+async function poll(id, t, fails=0){
   try{
     const r=await fetch(API+`/api/jobs/${id}`);
     if(!r.ok) throw new Error("http "+r.status);
@@ -372,22 +459,23 @@ async function poll(id, fails=0){
     $("prog").style.width=Math.round((j.progress||0)*100)+"%";
     $("status").textContent=j.message||j.status;
     if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
-      $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block";
-      $("retry").style.display="block"; refreshMe();
-      if(j.qc){const c=Math.round((j.qc.confidence||0)*100);
+      $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
+      const editTask=(t==='remove'||t==='erase');
+      $("retry").style.display=editTask?"block":"none";
+      if(j.qc && editTask){const c=Math.round((j.qc.confidence||0)*100);
         if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%)`; }
-        else { $("status").innerHTML=`Quality ${c}% — some of the watermark may remain. `+
-          `For a spotless result, highlight it on the canvas above and hit Re-run.`;
-          $("retry").style.display="block"; }
-      } else { $("status").textContent="Done"; }
+        else { $("status").innerHTML=`Quality ${c}% — some of it may remain. `+
+          `For a spotless result, adjust your highlight on the canvas above and re-run.`; }
+      } else { $("status").textContent="Done ✓"; }
       return;}
     if(j.status==="error"){$("status").textContent="Failed: "+(j.error||""); return;}
-    setTimeout(()=>poll(id),1200);
+    setTimeout(()=>poll(id,t),1200);
   }catch(e){
-    if(fails<12){ $("status").textContent="Working… (server waking up, ~30s)"; setTimeout(()=>poll(id,fails+1),3000); }
+    if(fails<12){ $("status").textContent="Working… (server waking up, ~30s)"; setTimeout(()=>poll(id,t,fails+1),3000); }
     else { $("status").textContent="Lost connection to the API. Please try again."; }
   }
 }
+setTask('remove');   // sync the per-mode controls once at startup
 </script>
 </body>
 </html>

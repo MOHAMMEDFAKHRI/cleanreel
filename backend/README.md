@@ -18,12 +18,29 @@ Open **http://127.0.0.1:8000/** for a built-in test UI, or hit the API directly.
 | GET  | `/api/health` | liveness + limits |
 | GET  | `/api/credits` | remaining export credits (stub) |
 | POST | `/api/upload` | multipart video → `{file_id, width, height, seconds}` |
-| POST | `/api/jobs` | `{file_id, mode:"preview"\|"export", owns_rights, boxes?, auto, upscale, protect}` → `{job_id}` |
-| GET  | `/api/jobs/{id}` | `{status, progress, message, result_url?}` |
-| GET  | `/api/result/{id}` | download cleaned mp4 |
+| GET  | `/api/reference/{fid}` | sharp still with the watermark highlighted (remove-mode canvas) |
+| GET  | `/api/frame/{fid}` | sharp still, NO highlight (erase-mode canvas) |
+| POST | `/api/autodetect/{fid}` | watermark auto-detect → PNG mask |
+| POST | `/api/jobs` | `{file_id, mode:"preview"\|"export", task, owns_rights, ...}` → `{job_id}` |
+| GET  | `/api/jobs/{id}` | `{status, progress, message, qc?, result_url?}` |
+| GET  | `/api/result/{id}` | download the result mp4 |
 
-- **preview** = free, first 4s. **export** = full clip; requires `owns_rights`, length ≤ 30s, and ≥1 credit.
-- Auto-detect runs if no `boxes` are given; otherwise the boxes define the region.
+- **preview** = free, first 4s. **export** = full clip; requires `owns_rights`, length ≤ 30s, and ≥1 credit — for every task.
+- `task` selects the pipeline:
+  - `remove` (default) — watermark removal; auto-detect runs if no `mask`/`boxes` are given. Extra: `mask` (base64 PNG), `boxes`, `protect`.
+  - `erase` — inpaint ANY user-marked region (opaque, every frame). Requires `mask` or `boxes`; optional `track:true` follows a moving object (template from the `/api/frame` still).
+  - `enhance` — no mask; re-encode through the enhancement chain. Extra: `scale` (1|2), `denoise` (bool, also drives deblock), `strength` (sharpen 0..1).
+  - `reframe` — aspect conversion. Extra: `ratio` ("9:16"|"1:1"|"4:5"…), `fit` ("crop" = subject-tracked crop, "blur" = fit + blurred bars).
+- `remove`/`erase` return a `qc` quality report; `enhance`/`reframe` do not (nothing to score).
+
+## Environment variables (all optional, safe defaults)
+| Var | Default | Meaning |
+|---|---|---|
+| `WR_ENGINE` | `auto` (`classical` in the Dockerfile) | inpainting backend; `auto` uses LaMa when installed (needs a 2 GB+ instance) |
+| `WR_MAX_DIM` | `1366` | max output long side for remove / erase / reframe — oversized inputs are downscaled, never enlarged |
+| `WR_ALLOW_UPSCALE` | unset | set `1` on a big instance to allow 1080p upscaling in remove/erase |
+| `WR_ENHANCE_MAX` | `1600` | max OUTPUT long side for the enhance task (a 2× request is capped to this — memory guard) |
+| `WR_REFRAME_SMOOTH` | `1.0` | reframe crop-path smoothing window, in seconds (bigger = calmer camera) |
 
 ## How the pieces map to the product
 - `main.py` — HTTP API, validation, the **free-vs-paid gate** (length limit + credits).

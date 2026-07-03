@@ -121,12 +121,21 @@ def frames_iter(path, limit=None):
     cap.release()
 
 class Encoder:
-    def __init__(self, w, h, fps, raw, upscale=None, sharpen=True):
+    """Streams raw BGR frames into ffmpeg/libx264 with an optional filter chain
+    (in order): deblock -> hqdn3d denoise -> lanczos scale -> cas+unsharp.
+    `sharpen` is a bool or a 0..1 strength (True == 0.5, the historic default)."""
+    def __init__(self, w, h, fps, raw, upscale=None, sharpen=True,
+                 denoise=False, deblock=False):
         vf = []
+        if deblock:
+            vf.append("deblock=filter=strong:block=8")
+        if denoise:
+            vf.append("hqdn3d=1.5:1.5:4:4")
         if upscale:
             vf.append(f"scale={upscale[0]}:{upscale[1]}:flags=lanczos+accurate_rnd")
-        if sharpen:
-            vf += ["cas=strength=0.5", "unsharp=5:5:0.4:5:5:0.0"]
+        s = 0.5 if sharpen is True else max(0.0, min(1.0, float(sharpen or 0.0)))
+        if s > 0:
+            vf += [f"cas=strength={round(s, 2)}", f"unsharp=5:5:{round(0.8 * s, 2)}:5:5:0.0"]
         vf_arg = ["-vf", ",".join(vf)] if vf else []
         self.p = subprocess.Popen(
             [ffmpeg_bin(), "-y", "-loglevel", "error", "-f", "rawvideo",
@@ -371,14 +380,15 @@ def detect(path):
 # --------------------------------------------------------------------------- #
 # Interactive helpers (canvas reference frame + user-painted mask)
 # --------------------------------------------------------------------------- #
-def sharpest_frame(path, limit=400):
-    """Return the sharpest frame (max Laplacian variance) — a good canvas still."""
-    best = None; bestv = -1.0
-    for f in frames_iter(path, limit):
+def sharpest_frame(path, limit=400, with_index=False):
+    """Return the sharpest frame (max Laplacian variance) — a good canvas still.
+    with_index=True also returns the frame index (used as tracking reference)."""
+    best = None; bestv = -1.0; besti = 0
+    for i, f in enumerate(frames_iter(path, limit)):
         v = float(cv2.Laplacian(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
         if v > bestv:
-            bestv = v; best = f.copy()
-    return best
+            bestv = v; best = f.copy(); besti = i
+    return (best, besti) if with_index else best
 
 
 def mean_and_std(path):
@@ -455,6 +465,237 @@ def mask_from_boxes(boxes, h, w):
 
 
 # --------------------------------------------------------------------------- #
+# Enhance & reframe (repurposing tasks — no watermark logic involved)
+# --------------------------------------------------------------------------- #
+def _even(v):
+    """Nearest-not-above even int >= 2 (libx264 + yuv420p need even dims)."""
+    v = int(round(v))
+    return max(2, v - (v & 1))
+
+
+def enhance_video(path, out, scale=1.0, denoise=True, sharpen=0.6, deblock=None,
+                  preview=None, max_dim=None, progress_cb=None):
+    """Quality pass through the Encoder's ffmpeg chain: optional lanczos upscale,
+    temporal denoise (hqdn3d), deblocking, and adaptive sharpening (cas+unsharp).
+    No mask, no inpainting; audio is preserved.
+      scale     output scale factor (1.0 or 2.0 from the UI)
+      sharpen   0..1 strength (0 = off)
+      deblock   None -> follow `denoise`
+      max_dim   cap on the OUTPUT long side (memory guard; None = uncapped)
+    """
+    w, h, fps, n = probe(path)
+    limit = int(preview * fps) if preview else None
+    if deblock is None:
+        deblock = bool(denoise)
+    tw, th = w * float(scale), h * float(scale)
+    if max_dim and max(tw, th) > max_dim:
+        s = max_dim / max(tw, th)
+        tw, th = tw * s, th * s
+    tw, th = _even(tw), _even(th)
+    target = (tw, th) if (tw, th) != (w, h) else None
+    tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
+    enc = Encoder(w, h, fps, raw, upscale=target, sharpen=sharpen,
+                  denoise=denoise, deblock=deblock)
+    total = limit or n
+    for k, f in enumerate(frames_iter(path, limit)):
+        enc.write(f)
+        if progress_cb and total and k % 10 == 0:
+            progress_cb(k + 1, total)
+        if k % 50 == 0:
+            print(f"  frame {k+1}/{total or '?'}", flush=True)
+    enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
+    print(f"done -> {out}")
+
+
+_FACE_CASCADE = None
+def _face_cascade():
+    """The Haar face detector bundled with OpenCV, or None if unavailable."""
+    global _FACE_CASCADE
+    if _FACE_CASCADE is None:
+        try:
+            c = cv2.CascadeClassifier(
+                os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml"))
+            _FACE_CASCADE = c if not c.empty() else False
+        except Exception:
+            _FACE_CASCADE = False
+    return _FACE_CASCADE or None
+
+
+def parse_ratio(ratio):
+    """'9:16' -> 0.5625 (w/h). Raises ValueError on nonsense."""
+    try:
+        a, b = str(ratio).replace("x", ":").split(":")
+        r = float(a) / float(b)
+    except Exception:
+        raise ValueError(f"Bad aspect ratio {ratio!r}; use e.g. '9:16', '1:1', '4:5'.")
+    if not (0.1 <= r <= 10.0):
+        raise ValueError(f"Aspect ratio {ratio!r} is out of range.")
+    return r
+
+
+def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
+    """CPU-light subject locator: on sampled, downscaled frames find the
+    'interesting' center — faces (area-weighted) > motion energy > detail
+    (gradient) — plus shot cuts from big luma jumps between samples.
+    Returns (idxs, cxs, cys, cuts, n_seen) in SOURCE pixel coords."""
+    w, h, fps, n = probe(path)
+    step = max(1, int(round(fps / sample_hz)))
+    sw = min(max_w, w); sh = max(2, int(round(h * sw / w)))
+    kx, ky = w / sw, h / sh
+    face = _face_cascade()
+    ys_g, xs_g = np.mgrid[0:sh, 0:sw].astype(np.float32)
+    idxs, cxs, cys, difs = [], [], [], []
+    prev = None; n_seen = 0
+    for i, f in enumerate(frames_iter(path, limit)):
+        n_seen += 1
+        if i % step:
+            continue
+        small = cv2.resize(f, (sw, sh), interpolation=cv2.INTER_AREA)
+        g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        gf = g.astype(np.float32)
+        difs.append(float(np.mean(cv2.absdiff(g, prev[1]))) if prev is not None else 0.0)
+        cx = cy = None
+        if face is not None:
+            det = face.detectMultiScale(g, 1.15, 4,
+                                        minSize=(max(16, sh // 10), max(16, sh // 10)))
+            if len(det):
+                a = np.array([bw * bh for (x, y, bw, bh) in det], np.float32)
+                cx = float(sum((x + bw / 2) * ar for (x, y, bw, bh), ar in zip(det, a)) / a.sum())
+                cy = float(sum((y + bh / 2) * ar for (x, y, bw, bh), ar in zip(det, a)) / a.sum())
+        if cx is None and prev is not None:
+            d = cv2.GaussianBlur(cv2.absdiff(gf, prev[0]), (0, 0), 3)
+            e = d * d; tot = float(e.sum())
+            if tot > 1e3 and float(e.max()) > 25.0:          # real motion, not noise
+                cx = float((e * xs_g).sum() / tot); cy = float((e * ys_g).sum() / tot)
+        if cx is None:                                        # static scene -> detail
+            e = (cv2.Sobel(gf, cv2.CV_32F, 1, 0, 3) ** 2 +
+                 cv2.Sobel(gf, cv2.CV_32F, 0, 1, 3) ** 2)
+            tot = float(e.sum()) + 1e-6
+            cx = float((e * xs_g).sum() / tot); cy = float((e * ys_g).sum() / tot)
+        idxs.append(i); cxs.append(cx * kx); cys.append(cy * ky)
+        prev = (gf, g)
+    if not idxs:
+        idxs, cxs, cys, difs = [0], [w / 2.0], [h / 2.0], [0.0]
+    d = np.array(difs)
+    thr = max(18.0, float(d.mean() + 3.5 * d.std()))
+    cuts = [int(idxs[j]) for j in range(1, len(idxs)) if d[j] > thr]
+    return (np.array(idxs), np.array(cxs, np.float32),
+            np.array(cys, np.float32), cuts, n_seen)
+
+
+def _smooth_path(idxs, vals, cuts, n_frames, fps, smooth_sec=1.0, dim=1920):
+    """Per-frame smooth center track: interpolate the samples, gaussian-smooth
+    within each shot (window ~ smooth_sec), then clamp the pan speed so the
+    virtual camera never whips. Cuts are allowed to jump. Returns float32[n]."""
+    n_frames = max(1, int(n_frames))
+    xs = np.interp(np.arange(n_frames), idxs, vals).astype(np.float32)
+    sigma = max(1.0, smooth_sec * fps / 2.0)
+    r = max(1, int(3 * sigma))
+    ker = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2); ker /= ker.sum()
+    bounds = [0] + sorted(c for c in set(cuts) if 0 < c < n_frames) + [n_frames]
+    out = xs.copy()
+    vmax = max(2.0, 0.012 * dim)                 # px/frame pan-speed ceiling
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        seg = xs[a:b]
+        if len(seg) >= 3:
+            seg = np.convolve(np.pad(seg, r, mode="edge"), ker, mode="valid").astype(np.float32)
+        cur = float(seg[0])
+        for i in range(len(seg)):
+            cur += float(np.clip(float(seg[i]) - cur, -vmax, vmax))
+            out[a + i] = cur
+    return out
+
+
+def _reframe_blur(path, out, a_t, w, h, fps, n, limit, max_dim, progress_cb):
+    """Scale-to-fit over a blurred, darkened cover background (no cropping)."""
+    if a_t < (w / h):
+        oh, ow = h, h * a_t                      # keep source height
+    else:
+        ow, oh = w, w / a_t                      # keep source width
+    if max_dim and max(ow, oh) > max_dim:
+        s = max_dim / max(ow, oh); ow, oh = ow * s, oh * s
+    ow, oh = _even(ow), _even(oh)
+    s_fit = min(ow / w, oh / h)
+    fw, fh = max(2, int(round(w * s_fit))), max(2, int(round(h * s_fit)))
+    fx, fy = (ow - fw) // 2, (oh - fh) // 2
+    s_cov = max(ow / w, oh / h)
+    bw_, bh_ = int(np.ceil(w * s_cov)), int(np.ceil(h * s_cov))
+    bx, by = (bw_ - ow) // 2, (bh_ - oh) // 2
+    tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
+    enc = Encoder(ow, oh, fps, raw, upscale=None, sharpen=False)
+    total = limit or n
+    for k, f in enumerate(frames_iter(path, limit)):
+        bg = cv2.resize(f, (bw_, bh_), interpolation=cv2.INTER_AREA)[by:by + oh, bx:bx + ow]
+        sm = cv2.resize(bg, (max(2, ow // 8), max(2, oh // 8)), interpolation=cv2.INTER_AREA)
+        sm = cv2.GaussianBlur(sm, (0, 0), 6)
+        canvas = cv2.resize(sm, (ow, oh), interpolation=cv2.INTER_LINEAR)
+        canvas = (canvas.astype(np.float32) * 0.55).astype(np.uint8)     # darken bars
+        canvas[fy:fy + fh, fx:fx + fw] = cv2.resize(f, (fw, fh),
+                                                    interpolation=cv2.INTER_AREA)
+        enc.write(canvas)
+        if progress_cb and total and k % 10 == 0:
+            progress_cb(k + 1, total)
+        if k % 50 == 0:
+            print(f"  frame {k+1}/{total or '?'}", flush=True)
+    enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
+    print(f"done -> {out}")
+
+
+def reframe_video(path, out, ratio="9:16", fit="crop", preview=None, max_dim=None,
+                  smooth_sec=None, progress_cb=None):
+    """Convert a video to a new aspect ratio.
+      fit='crop'  a smoothly tracked crop window keeps the subject (faces >
+                  motion > detail) centered; per-shot smoothing kills jitter.
+      fit='blur'  scale-to-fit over blurred, darkened bars (nothing cropped) —
+                  the fallback when the subject is too wide to crop cleanly.
+    Audio is preserved. max_dim caps the OUTPUT long side (memory guard).
+    smooth_sec: crop-path smoothing window (default: env WR_REFRAME_SMOOTH or 1.0)."""
+    a_t = parse_ratio(ratio)
+    w, h, fps, n = probe(path)
+    limit = int(preview * fps) if preview else None
+    if smooth_sec is None:
+        smooth_sec = float(os.environ.get("WR_REFRAME_SMOOTH", "1.0"))
+    if fit not in ("crop", "blur"):
+        raise ValueError("fit must be 'crop' or 'blur'.")
+    if fit == "blur":
+        return _reframe_blur(path, out, a_t, w, h, fps, n, limit, max_dim, progress_cb)
+
+    # crop-window size in source pixels
+    if a_t < (w / h):                            # narrower target -> crop width
+        ch = h - (h & 1); cw = min(_even(ch * a_t), w - (w & 1))
+    else:                                        # wider/equal target -> crop height
+        cw = w - (w & 1); ch = min(_even(cw / a_t), h - (h & 1))
+    axis_x = cw < w                              # which axis actually moves
+
+    idxs, cxs, cys, cuts, n_seen = _interest_track(path, limit)
+    track = _smooth_path(idxs, cxs if axis_x else cys, cuts, n_seen, fps,
+                         smooth_sec, dim=(w if axis_x else h))
+    if axis_x:
+        pos = np.clip(np.round(track - cw / 2), 0, w - cw).astype(int)
+    else:
+        pos = np.clip(np.round(track - ch / 2), 0, h - ch).astype(int)
+
+    ow, oh = cw, ch
+    if max_dim and max(ow, oh) > max_dim:
+        s = max_dim / max(ow, oh); ow, oh = _even(ow * s), _even(oh * s)
+    target = (ow, oh) if (ow, oh) != (cw, ch) else None
+
+    tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
+    enc = Encoder(cw, ch, fps, raw, upscale=target, sharpen=False)
+    x0, y0 = (w - cw) // 2, (h - ch) // 2        # the fixed axis stays centered
+    for k, f in enumerate(frames_iter(path, limit)):
+        p = int(pos[min(k, len(pos) - 1)])
+        crop = f[y0:y0 + ch, p:p + cw] if axis_x else f[p:p + ch, x0:x0 + cw]
+        enc.write(crop)
+        if progress_cb and n_seen and k % 10 == 0:
+            progress_cb(k + 1, n_seen)
+        if k % 50 == 0:
+            print(f"  frame {k+1}/{n_seen}", flush=True)
+    enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
+    print(f"done -> {out}")
+
+
+# --------------------------------------------------------------------------- #
 # Core processing
 # --------------------------------------------------------------------------- #
 def _flatness(gray, kw):
@@ -487,7 +728,7 @@ def process_image(path, out, mask01, inp):
     print(f"done -> {out}")
 
 def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
-                  sharpen=True, protect_subject=True, track=None):
+                  sharpen=True, protect_subject=True, track=None, progress_cb=None):
     w, h, fps, n = probe(path)
     limit = int(preview * fps) if preview else None
     B = info.get("B"); meanf = info.get("meanf"); gain = info.get("gain", 0.0); C = 245.0
@@ -524,6 +765,8 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
         # (3) inpaint (ROI-only when localized -> fast + sharp)
         f = _inpaint_smart(inp, f, eff)
         enc.write(f)
+        if progress_cb and (limit or n) and k % 10 == 0:
+            progress_cb(k + 1, limit or n)
         if k % 25 == 0:
             print(f"  frame {k+1}/{limit or n}", flush=True)
     enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
@@ -673,17 +916,33 @@ def detect_image(path):  # noqa: E302  (QC section above)
     return cv2.dilate(cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)),
                       np.ones((3, 3), np.uint8))
 
-def _track_setup(path, boxes, ref=None):
-    """Template + mask_roi from the first box at a reference frame (for --track)."""
+def _track_setup(path, boxes=None, ref=None, mask01=None):
+    """Template + mask_roi for a MOVING mark/object (--track / tracked erase).
+    Either boxes[0] gives the region, or a painted mask01 does — then the box is
+    its bounding rect and mask_roi keeps the painted shape, so only what the
+    user brushed is inpainted as it moves. ref = reference time in seconds
+    (default: middle of the clip)."""
     w, h, fps, n = probe(path)
+    roi = None
+    if boxes:
+        x, y, bw, bh = boxes[0]
+    elif mask01 is not None and mask01.max() > 0:
+        m = (mask01 > 0).astype(np.uint8)
+        x, y, bw, bh = cv2.boundingRect(m)
+        roi = m[y:y + bh, x:x + bw].copy()
+    else:
+        raise RuntimeError("Tracking needs a box or a painted mask for the mark.")
+    x = max(0, min(w - 2, int(x))); y = max(0, min(h - 2, int(y)))
+    bw = max(2, min(w - x, int(bw))); bh = max(2, min(h - y, int(bh)))
     idx = int(ref * fps) if ref is not None else n // 2
     cap = cv2.VideoCapture(path); cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, min(n - 1, idx)))
     ok, f = cap.read(); cap.release()
     if not ok:
-        sys.exit("Could not read the reference frame for --track.")
-    x, y, bw, bh = boxes[0]
+        raise RuntimeError("Could not read the reference frame for tracking.")
     g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-    return dict(template=g[y:y + bh, x:x + bw].copy(), mask_roi=np.ones((bh, bw), np.uint8))
+    if roi is None:
+        roi = np.ones((bh, bw), np.uint8)
+    return dict(template=g[y:y + bh, x:x + bw].copy(), mask_roi=roi[:bh, :bw])
 
 def clean(input_path, output_path, inp, mask=None, boxes=None, auto=True, track=False,
           preview=None, upscale=None, sharpen=True, protect=True, ref=None):
