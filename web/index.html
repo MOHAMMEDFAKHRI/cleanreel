@@ -91,10 +91,9 @@
   .pulse{animation:pulseA 1s ease-in-out 2}
   .warn{color:#ffb4b4}
   /* ---- before/after compare ---- */
-  .cmp{position:relative;border-radius:12px;overflow:hidden;background:#000;margin-top:10px;
-       touch-action:none;cursor:ew-resize;user-select:none}
-  .cmp video{display:block;width:100%;height:auto;max-height:380px;margin:0;border-radius:0}
-  .cmp .beforeV{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .cmp{position:relative;border-radius:12px;overflow:hidden;background:#000;margin:10px auto 0;
+       touch-action:none;cursor:ew-resize;user-select:none;max-width:100%}
+  .cmp video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;margin:0;border-radius:0}
   .cmpDiv{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.8)}
   .cmpDiv i{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;
       border-radius:50%;background:var(--card);border:2px solid #fff;color:var(--ink);
@@ -692,13 +691,27 @@ function setCmpPos(p){                     // divider position, 0..1 of the widt
   cmpB.style.clipPath=`inset(0 ${(100-cmpPos*100).toFixed(2)}% 0 0)`;
   $("cmpDiv").style.left=`calc(${(cmpPos*100).toFixed(2)}% - 1px)`;
 }
-function cmpSync(a,b){                     // the AFTER video drives; BEFORE follows
-  if(Math.abs((b.currentTime||0)-(a.currentTime||0))>0.25){
+function sizeCmp(){                        // size the slider box to the source aspect so the
+  const ar=(vw&&vh)?vw/vh:9/16;            // BEFORE & AFTER overlay exactly (no black bars/zoom)
+  const el=$("cmpSlide"), host=el.parentElement;
+  const avail=(host&&host.clientWidth)||el.clientWidth||320;
+  const maxH=Math.min((window.innerHeight||800)*0.62, 560);
+  let cw=avail, ch=cw/ar; if(ch>maxH){ ch=maxH; cw=ch*ar; }
+  el.style.width=Math.round(cw)+'px'; el.style.height=Math.round(ch)+'px';
+}
+function cmpSync(a,b){                     // keep BEFORE locked to AFTER's timeline
+  if(Math.abs((b.currentTime||0)-(a.currentTime||0))>0.06){
     try{ b.currentTime=a.currentTime||0; }catch(e){}
   }
 }
-cmpA.addEventListener('timeupdate',()=>cmpSync(cmpA,cmpB));
+let cmpRAF=0;
+function cmpTick(){                        // continuous tight sync while the slider is open
+  if(getComputedStyle($("cmpSlide")).display==='none'){ cmpRAF=0; return; }
+  cmpSync(cmpA,cmpB);
+  cmpRAF=requestAnimationFrame(cmpTick);
+}
 sbsA.addEventListener('timeupdate',()=>cmpSync(sbsA,sbsB));
+window.addEventListener('resize',()=>{ if($("cmpSlide").style.display!=='none') sizeCmp(); });
 function showView(mode){                   // 'result' | 'compare'
   const cmp=(mode==='compare'&&afterURL&&beforeURL);
   $("vResult").classList.toggle('active',!cmp);
@@ -713,7 +726,8 @@ function showView(mode){                   // 'result' | 'compare'
     const A=slide?cmpA:sbsA, B=slide?cmpB:sbsB;
     if(A.getAttribute('src')!==afterURL) A.src=afterURL;    // lazy-load on first open
     if(B.getAttribute('src')!==beforeURL) B.src=beforeURL;
-    if(slide) setCmpPos(cmpPos);
+    if(slide){ sizeCmp(); setCmpPos(cmpPos); if(!cmpRAF) cmpRAF=requestAnimationFrame(cmpTick); }
+    try{ A.currentTime=0; B.currentTime=0; }catch(e){}       // start both aligned
     A.play().catch(()=>{}); B.play().catch(()=>{});
   } else {
     [cmpA,cmpB,sbsA,sbsB].forEach(v=>{ try{ v.pause(); }catch(e){} });
