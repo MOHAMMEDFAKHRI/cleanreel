@@ -63,12 +63,13 @@ class Job:
     progress: float = 0.0          # 0..1
     message: str = "Queued"
     result_path: str | None = None
+    before_path: str | None = None  # browser-safe H.264 "before" clip for Compare
     error: str | None = None
     qc: dict | None = None          # quality report: confidence, residual_reduction, damage
     created: float = field(default_factory=time.time)
 
     def public(self):
-        d = asdict(self); d.pop("result_path", None); return d
+        d = asdict(self); d.pop("result_path", None); d.pop("before_path", None); return d
 
 
 class JobManager:
@@ -101,6 +102,7 @@ class JobManager:
                 job.status = "processing"; job.progress = 0.05
                 job.message = "Starting..."
                 self._run(job, params)
+                self._make_before(job, params)   # best-effort; never fails the job
                 job.status = "done"; job.progress = 1.0; job.message = "Done"
             except Exception as e:
                 job.status = "error"; job.error = str(e)
@@ -108,6 +110,27 @@ class JobManager:
                 traceback.print_exc()
             finally:
                 self.q.task_done()
+
+    def _make_before(self, job: Job, params: dict):
+        """Emit a browser-safe H.264 '{job_id}_before.mp4' covering the SAME
+        segment the result covers (the preview seconds, or the whole clip on
+        export), so the front-end Compare view can always play the "before"
+        side — the raw upload is often a codec browsers can't decode (HEVC,
+        mp4v, .mov/.avi/.mkv). Runs for EVERY task, streams one frame at a
+        time (memory-safe), and is strictly best-effort: any failure —
+        including probe()'s SystemExit — only skips the clip, never the job."""
+        try:
+            if not (job.result_path and os.path.exists(job.result_path)):
+                return
+            job.message = "Preparing the before/after compare..."
+            seconds = PREVIEW_SECONDS if job.mode == "preview" else None
+            bpath = os.path.join(self.storage, "results", f"{job.id}_before.mp4")
+            wr.make_before_clip(params["video_path"], bpath, preview=seconds,
+                                max_dim=int(os.environ.get("WR_BEFORE_MAX", "720")))
+            if os.path.exists(bpath) and os.path.getsize(bpath) > 0:
+                job.before_path = bpath
+        except (Exception, SystemExit) as e:
+            print("[before] clip skipped:", e)
 
     def _run(self, job: Job, params: dict):
         video = params["video_path"]

@@ -172,6 +172,34 @@ def mux_audio(video_only, src, out):
         shutil.copy(video_only, out)
 
 
+def make_before_clip(src, out, preview=None, max_dim=720):
+    """Browser-safe H.264 copy of the ORIGINAL's first `preview` seconds (whole
+    clip if None) — the "before" side of the front-end Compare view. Sources
+    are often codecs browsers can't decode (HEVC from iPhones, OpenCV's mp4v,
+    .mov/.avi/.mkv), so the raw upload can't be shown directly; this re-encode
+    through the standard Encoder (libx264 + yuv420p) always plays. No filters
+    are applied — no sharpen/denoise — only an optional downscale to `max_dim`
+    on the long side (aspect kept, even dims) so the pass stays cheap and
+    memory-safe. Audio is muxed exactly like the result's (mux_audio), so the
+    before/after containers line up frame for frame in the compare slider."""
+    w, h, fps, n = probe(src)
+    limit = int(preview * fps) if preview else None
+    target = None
+    if max_dim and max(w, h) > max_dim:
+        s = max_dim / float(max(w, h))
+        target = (_even(w * s), _even(h * s))
+    tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
+    try:
+        enc = Encoder(w, h, fps, raw, upscale=target, sharpen=False)
+        for f in frames_iter(src, limit):
+            enc.write(f)
+        enc.close()
+        mux_audio(raw, src, out)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Detection
 # --------------------------------------------------------------------------- #

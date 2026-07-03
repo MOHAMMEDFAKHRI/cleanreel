@@ -559,8 +559,8 @@ async function doUpload(){
     if(!r){ $("meta").textContent="Could not reach the server — check your connection and try again."; return; }
     if(!r.ok){ $("meta").textContent="Error: "+((d&&d.detail)||"upload failed"); return; }
     fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
-    if(beforeURL) URL.revokeObjectURL(beforeURL);
-    beforeURL=URL.createObjectURL(f);    // the "before" side of Compare
+    if(rawBeforeURL) URL.revokeObjectURL(rawBeforeURL);
+    rawBeforeURL=URL.createObjectURL(f); // last-resort Compare fallback (see compareReady)
     $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
     refC.width=maskC.width=vw; refC.height=maskC.height=vh;
     mctx.clearRect(0,0,vw,vh);
@@ -626,16 +626,18 @@ async function poll(id, t, fails=0){
     const j=await r.json();
     $("prog").style.width=Math.round((j.progress||0)*100)+"%";
     $("status").textContent=j.message||j.status;
-    if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
+    if(j.status==="done"){const now=Date.now(), u=API+j.result_url+"?t="+now;
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
-      compareReady(u,t);
+      compareReady(u,t,j.before_url?API+j.before_url+"?t="+now:null);
       const editTask=(t==='remove'||t==='erase'||t==='blur');
       $("retry").style.display=editTask?"block":"none";
       if(j.qc && editTask){const c=Math.round((j.qc.confidence||0)*100);
-        if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%) — flip to Compare to check it.`; }
+        if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%)`+
+          (beforeURL?" — flip to Compare to check it.":"."); }
         else { $("status").innerHTML=`Quality ${c}% — some of it may remain. `+
           `For a spotless result, adjust your highlight on the canvas above and re-run.`; }
-      } else { $("status").textContent="Done ✓ — flip to Compare to see before / after."; }
+      } else { $("status").textContent=beforeURL
+        ?"Done ✓ — flip to Compare to see before / after.":"Done ✓ — your result is ready."; }
       return;}
     if(j.status==="error"){ $("prog").style.width="0";
       $("status").textContent="⚠ "+(j.error||"Processing failed.")+
@@ -648,7 +650,13 @@ async function poll(id, t, fails=0){
   }
 }
 /* ---------- before / after compare ---------- */
+/* The "before" side is the BACKEND's {job}_before.mp4 (H.264, same segment &
+   duration as the result). Browsers often can't decode the raw upload
+   (HEVC / mp4v / .mov / .avi), which used to render a black Before — so the
+   raw file's object URL is only a last resort, and a before that still fails
+   to load hides the Compare toggle instead of ever showing a broken view. */
 let beforeURL=null, afterURL=null, cmpTask='remove', cmpPos=0.6;
+let rawBeforeURL=null;                     // object URL of the raw upload (fallback only)
 const cmpA=$("cmpA"), cmpB=$("cmpB"), sbsA=$("sbsA"), sbsB=$("sbsB");
 function setCmpPos(p){                     // divider position, 0..1 of the width
   cmpPos=Math.min(0.94,Math.max(0.06,p));
@@ -684,12 +692,33 @@ function showView(mode){                   // 'result' | 'compare'
 }
 $("vResult").onclick=()=>showView('result');
 $("vCompare").onclick=()=>showView('compare');
-function compareReady(url,t){              // a job finished -> offer the toggle
+function compareReady(url,t,before){       // a job finished -> offer the toggle
   afterURL=url; cmpTask=t;
-  $("viewBar").style.display=beforeURL?'flex':'none';
+  beforeURL=before||rawBeforeURL||null;    // prefer the server clip; raw file = last resort
+  $("vCompare").style.display=beforeURL?'':'none';
+  $("viewBar").style.display=beforeURL?'flex':'none';   // no before -> Result only
 }
+function beforeBroken(){                   // before can't load -> never show a black compare
+  if(!beforeURL) return;
+  const active=$("vCompare").classList.contains('active');
+  if(rawBeforeURL&&beforeURL!==rawBeforeURL){          // one retry: the raw upload
+    beforeURL=rawBeforeURL;
+    [cmpB,sbsB].forEach(v=>v.removeAttribute('src')); // force a reload on next show
+    if(active) showView('compare');
+    return;
+  }
+  beforeURL=null;                          // out of options -> Result only
+  $("vCompare").style.display='none'; $("viewBar").style.display='none';
+  showView('result');
+}
+[cmpB,sbsB].forEach(v=>{
+  v.addEventListener('error',()=>{ if(v.getAttribute('src')) beforeBroken(); });
+  v.addEventListener('stalled',()=>{ if(v.getAttribute('src')&&v.readyState===0) beforeBroken(); });
+});
 function resetCompare(){                   // new upload / new job -> back to Result
-  afterURL=null; $("viewBar").style.display='none'; showView('result');
+  afterURL=null; beforeURL=null;           // the before clip belongs to ONE job
+  $("viewBar").style.display='none'; $("vCompare").style.display='none';
+  showView('result');
   [cmpA,cmpB,sbsA,sbsB].forEach(v=>v.removeAttribute('src'));
 }
 /* drag (or tap) anywhere on the slider to sweep before/after */

@@ -19,3 +19,9 @@ _tail_jobs.py
 _tail_main.py
 _tail_index.txt
 _mirror_jobs.py
+# catch-all for any sandbox scratch/mirror files
+_tail_*
+_mirror_*
+_sync_*
+_m_*
+_bridge_*

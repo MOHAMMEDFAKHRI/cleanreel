@@ -382,6 +382,10 @@ def job_status(job_id: str):
     data = job.public()
     if job.status == "done":
         data["result_url"] = f"/api/result/{job_id}"
+        # Compare's "before" side — advertised ONLY when the clip really exists,
+        # so the front-end never offers a compare it can't play.
+        if job.before_path and os.path.exists(job.before_path):
+            data["before_url"] = f"/api/before/{job_id}"
     return data
 
 
@@ -392,6 +396,18 @@ def result(job_id: str):
         raise HTTPException(404, "Result not ready.")
     return FileResponse(job.result_path, media_type="video/mp4",
                         filename="cleaned.mp4")
+
+
+@app.get("/api/before/{job_id}")
+def before(job_id: str):
+    """The browser-safe H.264 'before' clip that matches the result's segment
+    (see jobs._make_before) — the left side of the front-end Compare view."""
+    job = manager.get(job_id)
+    if (not job or job.status != "done" or not job.before_path
+            or not os.path.exists(job.before_path)):
+        raise HTTPException(404, "Before clip not available.")
+    return FileResponse(job.before_path, media_type="video/mp4",
+                        filename="before.mp4")
 
 
 # tiny built-in test UI
