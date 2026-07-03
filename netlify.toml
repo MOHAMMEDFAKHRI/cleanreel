@@ -14,3 +14,14 @@
   for = "/config.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+# Always revalidate HTML so visitors get new features immediately (assets stay cached).
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
