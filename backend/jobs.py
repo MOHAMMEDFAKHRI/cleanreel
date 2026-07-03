@@ -13,6 +13,8 @@ Production swap-in points are marked with  # PROD:
 """
 from __future__ import annotations
 import os, sys, time, uuid, threading, queue, traceback
+import numpy as np
+import cv2
 from dataclasses import dataclass, field, asdict
 
 # import the engine (one folder up)
@@ -29,6 +31,28 @@ def _inpainter():
     if _INP is None:
         _INP = wr.Inpainter(os.environ.get("WR_ENGINE", "auto"))
     return _INP
+
+
+def _overlay_consistency(path, info, k=6, limit=None):
+    """How consistently the static overlay structure (temporal-mean high-pass)
+    shows up in individual frames, inside the mask. Median |cosine| over k
+    sampled frames: ~0.9 = a see-through overlay sits there in EVERY frame
+    (reverse-blend it out); ~0.1 = the mean structure is just a moving
+    object's smear (straight inpaint is right)."""
+    m = info["mask"] > 0
+    if info.get("B") is None or m.sum() < 8:
+        return 0.0
+    bg = info["B"].mean(2).astype(np.float32)
+    u = (bg - cv2.GaussianBlur(bg, (0, 0), 6.0))[m]
+    nu = float(np.linalg.norm(u))
+    if nu < 1e-3:
+        return 0.0
+    u /= nu
+    cs = []
+    for f in wr._sample_frames(path, k, limit):
+        hp = wr._hp_gray(f)[m]
+        cs.append(abs(float((hp * u).sum())) / (float(np.linalg.norm(hp)) + 1e-6))
+    return float(np.median(cs)) if cs else 0.0
 
 
 @dataclass
@@ -97,12 +121,16 @@ class JobManager:
 
         # ---------- ENHANCE: pure quality pass (no mask, no detection) ----------
         if task == "enhance":
-            job.progress = 0.15; job.message = "Enhancing (denoise + sharpen)..."
+            scale = float(params.get("scale", 1.0) or 1.0)
+            job.progress = 0.15
+            job.message = ("Enhancing — denoise, 2× upscale, halo-safe sharpen..."
+                           if scale >= 1.5 else
+                           "Enhancing — denoise + halo-safe sharpen...")
             # Own output cap: 2x of a large source would blow the memory budget.
             # WR_ENHANCE_MAX = max OUTPUT long side for enhance (default 1600).
             max_out = int(os.environ.get("WR_ENHANCE_MAX", "1600"))
             wr.enhance_video(video, out,
-                             scale=float(params.get("scale", 1.0) or 1.0),
+                             scale=scale,
                              denoise=bool(params.get("denoise", True)),
                              sharpen=float(params.get("strength", 0.6)),
                              preview=seconds, max_dim=max_out,
@@ -113,12 +141,17 @@ class JobManager:
         # ---------- REFRAME: aspect conversion with subject tracking ----------
         if task == "reframe":
             ratio = params.get("ratio", "9:16"); fit = params.get("fit", "crop")
+            focus = params.get("focus")          # (x, y) normalized, or None
             job.progress = 0.15
-            job.message = (f"Reframing to {ratio} "
-                           f"({'smart crop' if fit == 'crop' else 'blurred fill'})...")
+            if fit != "crop":
+                job.message = f"Reframing to {ratio} (blurred fill)..."
+            elif focus:
+                job.message = f"Reframing to {ratio} around your focus point..."
+            else:
+                job.message = f"Reframing to {ratio} (smart crop, auto-tracking)..."
             wr.reframe_video(video, out, ratio=ratio, fit=fit, preview=seconds,
                              max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
-                             progress_cb=render_progress)
+                             focus=focus, progress_cb=render_progress)
             job.result_path = out
             return
 
@@ -126,7 +159,7 @@ class JobManager:
         trk = None
 
         if task == "erase":
-            # ---------- ERASE: pure user-mask inpaint of ANY object ----------
+            # ---------- ERASE: user-mask removal of ANY object ----------
             job.message = "Preparing the erase..."
             if params.get("mask_path"):
                 mask = wr.mask_from_painted(params["mask_path"], h, w)
@@ -136,24 +169,74 @@ class JobManager:
                 raise RuntimeError("Brush over what you want erased, then retry.")
             if mask.sum() == 0:
                 raise RuntimeError("The erase mask is empty — brush over the object and retry.")
-            # The marked region is treated as OPAQUE: straight inpaint every frame.
-            # No reverse-blend and no flatness gate — the user explicitly wants
-            # this (possibly textured/moving) region gone.
-            info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
             protect = False
             if params.get("track"):
-                # moving object: template-match it each frame (mark once -> follow)
+                # MOVING object: opaque inpaint, template-matched each frame
+                # (mark once -> follow). Reverse-blend needs a static region.
+                info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
                 trk = wr._track_setup(video, ref=params.get("track_ref"), mask01=mask)
                 job.message = "Tracking the object..."
                 # QC scoring assumes a static region; skip it for tracked erases.
             else:
+                # SMART ENGINE CHOICE: classify the marked region by its temporal
+                # behaviour instead of always assuming it's opaque (that forced
+                # straight inpaint and scored ~49% on see-through bands).
+                # Semi-transparent (content shows through -> high temporal std)
+                # -> reverse-blend it out like a watermark; opaque (low std)
+                # -> straight inpaint, as before.
+                job.message = "Analysing the marked region..."
+                qc_limit = int(seconds * fps) if seconds else int(min(n, 8 * fps))
+                meanf = params.get("meanf"); stdg = params.get("std_gray")
+                if meanf is None or stdg is None:
+                    meanf, stdg = wr.mean_and_std(video)
+                # Opacity test on the mask CORE (median of temporal std): a
+                # sloppy brush margin over a moving background must not make a
+                # solid logo look "semi-transparent".
+                core = cv2.erode(mask, np.ones((13, 13), np.uint8))
+                if core.sum() < 16:
+                    core = mask
+                if float(np.median(stdg[core > 0])) < 3.0:
+                    info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
+                else:
+                    info = wr.info_from_user_mask(video, mask, meanf, stdg)
+                    mask = info["mask"]
+                soft = info.get("B") is not None
+                dual = False
+                if soft:
+                    # Guard: high std alone can also mean a MOVING opaque object
+                    # brushed without tracking. A true see-through overlay's
+                    # structure recurs in EVERY frame; check that consistency.
+                    c = _overlay_consistency(video, info, k=6, limit=qc_limit)
+                    if c < 0.18:
+                        soft = False                     # clearly a moving object
+                    elif c < 0.32:
+                        dual = True                      # ambiguous: let QC decide
+                if not soft:
+                    info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
+                protect = soft   # reverse-blend keeps the detail under the band
+                job.message = ("Scoring both erase engines to pick the best..." if dual
+                               else "See-through overlay found — reverse-blending it out..."
+                               if soft else "Solid object — filling the region in...")
                 try:
-                    qc_limit = int(seconds * fps) if seconds else int(min(n, 8 * fps))
-                    info, mask, qc = wr.autotune(video, info, mask, _inpainter(),
+                    if dual:
+                        # score BOTH engines on sampled frames, keep the winner
+                        opq = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
+                        i1, m1, q1 = wr.autotune(video, opq, mask, _inpainter(),
                                                  protect=False, k=4, limit=qc_limit)
+                        i2, m2, q2 = wr.autotune(video, info, mask, _inpainter(),
+                                                 protect=True, k=4, limit=qc_limit)
+                        if q2["confidence"] > q1["confidence"]:
+                            info, mask, qc, soft = i2, m2, q2, True
+                        else:
+                            info, mask, qc, soft = i1, m1, q1, False
+                        protect = soft
+                    else:
+                        info, mask, qc = wr.autotune(video, info, mask, _inpainter(),
+                                                     protect=protect, k=4, limit=qc_limit)
                     job.qc = qc
                     conf = int(round(qc.get("confidence", 0) * 100))
-                    job.message = f"Erase quality {conf}%. Rendering..."
+                    kind = "see-through overlay" if soft else "solid object"
+                    job.message = f"Erase quality {conf}% ({kind}). Rendering..."
                 except Exception as e:
                     print("[qc] skipped:", e)   # QC must never block delivery
             job.progress = 0.25

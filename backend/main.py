@@ -262,6 +262,7 @@ class JobRequest(BaseModel):
     strength: float = 0.6                 # enhance: sharpen strength 0..1
     ratio: str = "9:16"                   # reframe: 9:16 | 1:1 | 4:5 ...
     fit: str = "crop"                     # reframe: crop | blur
+    focus: list[float] | None = None      # reframe: [x, y] normalized 0..1 pins the crop center
 
 
 @app.post("/api/jobs")
@@ -285,6 +286,8 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
             raise HTTPException(400, str(e))
         if req.fit not in ("crop", "blur"):
             raise HTTPException(400, "fit must be 'crop' or 'blur'.")
+        if req.focus is not None and len(req.focus) != 2:
+            raise HTTPException(400, "focus must be [x, y] with 0..1 values.")
 
     if req.mode == "export":                 # preview stays free & anonymous
         if meta["seconds"] > MAX_EXPORT_SECONDS:
@@ -306,9 +309,10 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
         with open(mpath, "wb") as mf:
             mf.write(raw)
         params["mask_path"] = mpath
-        if task == "remove":
-            # only the remove pipeline needs the (expensive) temporal mean/std —
-            # erase always treats the marked region as opaque.
+        if not (task == "erase" and req.track):
+            # remove — and now the static erase too — uses the (cached) temporal
+            # mean/std so the engine can tell semi-transparent from opaque and
+            # pick reverse-blend vs straight inpaint. Tracked erases stay opaque.
             meanf, std_gray = _mean_std(meta)
             params.update(meanf=meanf, std_gray=std_gray)
     if task == "erase":
@@ -321,6 +325,9 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
     elif task == "reframe":
         params["ratio"] = req.ratio
         params["fit"] = req.fit
+        if req.focus is not None:
+            params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
+                               max(0.0, min(1.0, float(req.focus[1]))))
     job_id = manager.submit(req.mode, params)
     return {"job_id": job_id, "mode": req.mode, "task": task}
 

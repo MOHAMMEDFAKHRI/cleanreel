@@ -120,22 +120,39 @@ def frames_iter(path, limit=None):
         i += 1
     cap.release()
 
+def _encoder_vf(upscale=None, sharpen=True, denoise=False, deblock=False):
+    """Build the Encoder's ffmpeg -vf chain (split out so it's unit-testable).
+
+    Halo guard: CAS is contrast-adaptive (safe up to ~0.8); classic unsharp is
+    what rings on high-contrast edges, so its amount is capped low and reduced
+    further after an upscale (lanczos + CAS already crispen the enlarged
+    pixels). Denoise keeps a mild temporal term so fine moving detail isn't
+    smeared, and deblock runs in 'weak' mode (kills blocking, keeps texture).
+    """
+    vf = []
+    if deblock:
+        vf.append("deblock=filter=weak:block=8")
+    if denoise:
+        vf.append("hqdn3d=1.5:1.2:3:3")
+    if upscale:
+        vf.append(f"scale={upscale[0]}:{upscale[1]}:flags=lanczos+accurate_rnd")
+    s = 0.5 if sharpen is True else max(0.0, min(1.0, float(sharpen or 0.0)))
+    if s > 0:
+        vf.append(f"cas=strength={round(min(0.8, s), 2)}")
+        amt = min(0.4, 0.5 * s) * (0.7 if upscale else 1.0)
+        if amt >= 0.05:
+            vf.append(f"unsharp=5:5:{round(amt, 2)}:5:5:0.0")
+    return vf
+
+
 class Encoder:
     """Streams raw BGR frames into ffmpeg/libx264 with an optional filter chain
     (in order): deblock -> hqdn3d denoise -> lanczos scale -> cas+unsharp.
-    `sharpen` is a bool or a 0..1 strength (True == 0.5, the historic default)."""
+    `sharpen` is a bool or a 0..1 strength (True == 0.5, the historic default).
+    Sharpening is halo-guarded — see _encoder_vf."""
     def __init__(self, w, h, fps, raw, upscale=None, sharpen=True,
                  denoise=False, deblock=False):
-        vf = []
-        if deblock:
-            vf.append("deblock=filter=strong:block=8")
-        if denoise:
-            vf.append("hqdn3d=1.5:1.5:4:4")
-        if upscale:
-            vf.append(f"scale={upscale[0]}:{upscale[1]}:flags=lanczos+accurate_rnd")
-        s = 0.5 if sharpen is True else max(0.0, min(1.0, float(sharpen or 0.0)))
-        if s > 0:
-            vf += [f"cas=strength={round(s, 2)}", f"unsharp=5:5:{round(0.8 * s, 2)}:5:5:0.0"]
+        vf = _encoder_vf(upscale, sharpen, denoise, deblock)
         vf_arg = ["-vf", ",".join(vf)] if vf else []
         self.p = subprocess.Popen(
             [ffmpeg_bin(), "-y", "-loglevel", "error", "-f", "rawvideo",
@@ -537,6 +554,9 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
     """CPU-light subject locator: on sampled, downscaled frames find the
     'interesting' center — faces (area-weighted) > motion energy > detail
     (gradient) — plus shot cuts from big luma jumps between samples.
+    Faces get MEMORY: once seen, their spot is held for ~1.2 s of Haar
+    flicker (and lightly EMA-damped) so busy backgrounds can't yank the crop
+    off a face; the memory resets on hard cuts.
     Returns (idxs, cxs, cys, cuts, n_seen) in SOURCE pixel coords."""
     w, h, fps, n = probe(path)
     step = max(1, int(round(fps / sample_hz)))
@@ -546,6 +566,8 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
     ys_g, xs_g = np.mgrid[0:sh, 0:sw].astype(np.float32)
     idxs, cxs, cys, difs = [], [], [], []
     prev = None; n_seen = 0
+    face_c = None; face_hold = 0                 # face memory: (cx,cy) + samples left
+    HOLD = max(2, int(round(sample_hz * 1.2)))   # bridge ~1.2 s of missed detections
     for i, f in enumerate(frames_iter(path, limit)):
         n_seen += 1
         if i % step:
@@ -553,7 +575,10 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
         small = cv2.resize(f, (sw, sh), interpolation=cv2.INTER_AREA)
         g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         gf = g.astype(np.float32)
-        difs.append(float(np.mean(cv2.absdiff(g, prev[1]))) if prev is not None else 0.0)
+        dif = float(np.mean(cv2.absdiff(g, prev[1]))) if prev is not None else 0.0
+        difs.append(dif)
+        if dif > 40.0:                           # hard cut -> forget the old face spot
+            face_c = None; face_hold = 0
         cx = cy = None
         if face is not None:
             det = face.detectMultiScale(g, 1.15, 4,
@@ -562,6 +587,13 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
                 a = np.array([bw * bh for (x, y, bw, bh) in det], np.float32)
                 cx = float(sum((x + bw / 2) * ar for (x, y, bw, bh), ar in zip(det, a)) / a.sum())
                 cy = float(sum((y + bh / 2) * ar for (x, y, bw, bh), ar in zip(det, a)) / a.sum())
+                if face_c is not None:           # damp Haar box jitter between samples
+                    cx = 0.65 * cx + 0.35 * face_c[0]
+                    cy = 0.65 * cy + 0.35 * face_c[1]
+                face_c = (cx, cy); face_hold = HOLD
+            elif face_c is not None and face_hold > 0:
+                face_hold -= 1                   # briefly lost: hold the face's spot
+                cx, cy = face_c                  # (motion/detail must not yank away)
         if cx is None and prev is not None:
             d = cv2.GaussianBlur(cv2.absdiff(gf, prev[0]), (0, 0), 3)
             e = d * d; tot = float(e.sum())
@@ -586,7 +618,9 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
 def _smooth_path(idxs, vals, cuts, n_frames, fps, smooth_sec=1.0, dim=1920):
     """Per-frame smooth center track: interpolate the samples, gaussian-smooth
     within each shot (window ~ smooth_sec), then clamp the pan speed so the
-    virtual camera never whips. Cuts are allowed to jump. Returns float32[n]."""
+    virtual camera never whips. A small deadband (~0.8% of the frame) makes
+    the camera HOLD STILL through sub-pixel target wiggle instead of drifting.
+    Cuts are allowed to jump. Returns float32[n]."""
     n_frames = max(1, int(n_frames))
     xs = np.interp(np.arange(n_frames), idxs, vals).astype(np.float32)
     sigma = max(1.0, smooth_sec * fps / 2.0)
@@ -594,14 +628,17 @@ def _smooth_path(idxs, vals, cuts, n_frames, fps, smooth_sec=1.0, dim=1920):
     ker = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2); ker /= ker.sum()
     bounds = [0] + sorted(c for c in set(cuts) if 0 < c < n_frames) + [n_frames]
     out = xs.copy()
-    vmax = max(2.0, 0.012 * dim)                 # px/frame pan-speed ceiling
+    vmax = max(2.0, 0.010 * dim)                 # px/frame pan-speed ceiling
+    dead = 0.008 * dim                           # ignore tiny target wiggle
     for a, b in zip(bounds[:-1], bounds[1:]):
         seg = xs[a:b]
         if len(seg) >= 3:
             seg = np.convolve(np.pad(seg, r, mode="edge"), ker, mode="valid").astype(np.float32)
         cur = float(seg[0])
         for i in range(len(seg)):
-            cur += float(np.clip(float(seg[i]) - cur, -vmax, vmax))
+            err = float(seg[i]) - cur
+            if abs(err) > dead:                  # outside the deadband: chase calmly
+                cur += float(np.clip(err - np.copysign(dead, err), -vmax, vmax))
             out[a + i] = cur
     return out
 
@@ -642,14 +679,16 @@ def _reframe_blur(path, out, a_t, w, h, fps, n, limit, max_dim, progress_cb):
 
 
 def reframe_video(path, out, ratio="9:16", fit="crop", preview=None, max_dim=None,
-                  smooth_sec=None, progress_cb=None):
+                  smooth_sec=None, focus=None, progress_cb=None):
     """Convert a video to a new aspect ratio.
       fit='crop'  a smoothly tracked crop window keeps the subject (faces >
                   motion > detail) centered; per-shot smoothing kills jitter.
       fit='blur'  scale-to-fit over blurred, darkened bars (nothing cropped) —
                   the fallback when the subject is too wide to crop cleanly.
     Audio is preserved. max_dim caps the OUTPUT long side (memory guard).
-    smooth_sec: crop-path smoothing window (default: env WR_REFRAME_SMOOTH or 1.0)."""
+    smooth_sec: crop-path smoothing window (default: env WR_REFRAME_SMOOTH or 1.0).
+    focus: optional (x, y) in NORMALIZED 0..1 source coords — pins the crop
+    center on that point (rock steady, no auto-tracking). None = auto-track."""
     a_t = parse_ratio(ratio)
     w, h, fps, n = probe(path)
     limit = int(preview * fps) if preview else None
@@ -667,13 +706,23 @@ def reframe_video(path, out, ratio="9:16", fit="crop", preview=None, max_dim=Non
         cw = w - (w & 1); ch = min(_even(cw / a_t), h - (h & 1))
     axis_x = cw < w                              # which axis actually moves
 
-    idxs, cxs, cys, cuts, n_seen = _interest_track(path, limit)
-    track = _smooth_path(idxs, cxs if axis_x else cys, cuts, n_seen, fps,
-                         smooth_sec, dim=(w if axis_x else h))
-    if axis_x:
-        pos = np.clip(np.round(track - cw / 2), 0, w - cw).astype(int)
+    if focus is not None:
+        # user-pinned focus point: a fixed crop centred on it (clamped inside
+        # the frame) — no tracking pass needed, the camera never moves.
+        fx = min(max(float(focus[0]), 0.0), 1.0) * w
+        fy = min(max(float(focus[1]), 0.0), 1.0) * h
+        n_seen = int(limit if limit else (n if n > 0 else 1))
+        p0 = (int(np.clip(round(fx - cw / 2), 0, w - cw)) if axis_x
+              else int(np.clip(round(fy - ch / 2), 0, h - ch)))
+        pos = np.full(max(1, n_seen), p0, int)
     else:
-        pos = np.clip(np.round(track - ch / 2), 0, h - ch).astype(int)
+        idxs, cxs, cys, cuts, n_seen = _interest_track(path, limit)
+        track = _smooth_path(idxs, cxs if axis_x else cys, cuts, n_seen, fps,
+                             smooth_sec, dim=(w if axis_x else h))
+        if axis_x:
+            pos = np.clip(np.round(track - cw / 2), 0, w - cw).astype(int)
+        else:
+            pos = np.clip(np.round(track - ch / 2), 0, h - ch).astype(int)
 
     ow, oh = cw, ch
     if max_dim and max(ow, oh) > max_dim:

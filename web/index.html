@@ -85,6 +85,23 @@
   .modes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
   .modes .tool{padding:9px 14px;font-weight:600}
   .optrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  /* ---- before/after compare ---- */
+  .cmp{position:relative;border-radius:12px;overflow:hidden;background:#000;margin-top:10px;
+       touch-action:none;cursor:ew-resize;user-select:none}
+  .cmp video{display:block;width:100%;height:auto;max-height:380px;margin:0;border-radius:0}
+  .cmp .beforeV{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .cmpDiv{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.8)}
+  .cmpDiv i{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;
+      border-radius:50%;background:var(--card);border:2px solid #fff;color:var(--ink);
+      display:flex;align-items:center;justify-content:center;font-style:normal;font-size:15px}
+  .cmpTag{position:absolute;top:8px;font-size:12px;font-weight:700;padding:3px 9px;border-radius:7px;
+      background:rgba(11,14,26,.75);color:var(--ink);pointer-events:none}
+  .cmpTag.l{left:8px} .cmpTag.r{right:8px}
+  .cmpSbs{display:none;gap:10px;margin-top:10px}
+  .cmpSbs figure{flex:1;margin:0;min-width:0}
+  .cmpSbs video{width:100%;margin:0;max-height:380px}
+  .cmpSbs figcaption{color:var(--mut);font-size:13px;text-align:center;margin-top:4px}
+  @media(max-width:620px){.cmpSbs{flex-direction:column}}
 </style>
 </head>
 <body>
@@ -136,7 +153,7 @@
             <canvas id="refCanvas" class="base"></canvas>
             <canvas id="maskCanvas" class="mask"></canvas>
           </div>
-          <div class="toolbar">
+          <div class="toolbar" id="toolbar">
             <button class="tool active" id="tBrush">🖌 Brush</button>
             <button class="tool" id="tBox">▭ Box</button>
             <button class="tool" id="tErase">🧽 Eraser</button>
@@ -170,6 +187,10 @@
             <button class="tool ft active" data-fit="crop">🎯 Smart crop (follows the subject)</button>
             <button class="tool ft" data-fit="blur">🌫 Fit + blurred bars</button>
           </div>
+          <div class="optrow" id="focusRow">
+            <span class="pill" id="focusLbl">Focus: auto — tracks faces &amp; motion</span>
+            <button class="tool" id="fClear" style="display:none">✖ Clear focus</button>
+          </div>
           <p class="hint">Smart crop keeps faces &amp; motion centered with a smooth virtual camera. Pick blurred bars when the whole frame must stay visible.</p>
         </div>
 
@@ -184,7 +205,22 @@
       </div>
       <div>
         <p class="step-tag">Step 3 · Result</p>
+        <div class="row" id="viewBar" style="display:none">
+          <button class="tool active" id="vResult">▶ Result</button>
+          <button class="tool" id="vCompare">⇆ Compare before / after</button>
+        </div>
         <video id="out" controls playsinline></video>
+        <div class="cmp" id="cmpSlide" style="display:none">
+          <video id="cmpA" muted playsinline loop preload="auto"></video>
+          <video id="cmpB" class="beforeV" muted playsinline loop preload="auto"></video>
+          <div class="cmpDiv" id="cmpDiv"><i>⇆</i></div>
+          <span class="cmpTag l">Before</span><span class="cmpTag r">After</span>
+        </div>
+        <div class="cmpSbs" id="cmpSbs">
+          <figure><video id="sbsB" muted playsinline loop preload="auto"></video><figcaption>Before</figcaption></figure>
+          <figure><video id="sbsA" muted playsinline loop preload="auto"></video><figcaption>After</figcaption></figure>
+        </div>
+        <p class="hint" id="cmpHint" style="display:none">Drag the handle to sweep between the original and the result. Both loop muted &amp; in sync.</p>
         <a id="dl" class="dl">⬇ Download cleaned video</a>
         <p id="retry" class="hint" style="display:none">Not fully clean? Adjust your highlight on the left and hit <b>Free preview</b> again — previews are free and unlimited.</p>
       </div>
@@ -242,21 +278,33 @@ const TASK_COPY={
   enhance:{tag:'Step 2 · Enhancement options',
     need:'Upload a video to enhance — options are below.'},
   reframe:{tag:'Step 2 · Pick the new shape',
-    need:'Upload a video to reframe — pick the aspect below.'}
+    need:'Upload a video to reframe — pick the aspect below, then (optionally) tap the frame to pin the crop.',
+    hint:'Optional: <b>tap the frame</b> to pin the crop centre — a crosshair marks it and the camera stays locked there. No pin = smart auto-tracking (faces &amp; motion). <b>✖ Clear focus</b> returns to auto.'}
 };
+let savedMask=null;                  // remove/erase paint, parked while in reframe
 function setTask(t){
-  task=t;
+  const was=task; task=t;
   document.querySelectorAll('#modes .mode').forEach(b=>b.classList.toggle('active',b.dataset.task===t));
-  const ed=(t==='remove'||t==='erase');
+  const ed=(t==='remove'||t==='erase');            // mask-editor modes
+  const canv=ed||t==='reframe';                    // modes that show the canvas
   $("step2Tag").textContent=TASK_COPY[t].tag;
   $("needUpload").innerHTML=TASK_COPY[t].need;
-  $("needUpload").style.display=(ed&&!fileId)?'block':'none';
-  $("editorWrap").style.display=(ed&&fileId)?'block':'none';
+  $("needUpload").style.display=(canv&&!fileId)?'block':'none';
+  $("editorWrap").style.display=(canv&&fileId)?'block':'none';
   $("enhanceWrap").style.display=(t==='enhance')?'block':'none';
   $("reframeWrap").style.display=(t==='reframe')?'block':'none';
+  $("toolbar").style.display=ed?'':'none';
   $("tAuto").style.display=(t==='remove')?'':'none';
   $("trackWrap").style.display=(t==='erase')?'flex':'none';
-  if(ed){ $("editorHint").innerHTML=TASK_COPY[t].hint; if(fileId) loadBase(); }
+  maskC.style.opacity=(t==='reframe')?'0.9':'0.5'; // focus pin should read clearly
+  if(canv){ $("editorHint").innerHTML=TASK_COPY[t].hint; if(fileId) loadBase(); }
+  if(was!=='reframe'&&t==='reframe'){              // park the paint, show the pin
+    if(maskC.width&&maskC.height) savedMask=mctx.getImageData(0,0,maskC.width,maskC.height);
+    drawFocus();
+  } else if(was==='reframe'&&t!=='reframe'){       // restore the parked paint
+    mctx.clearRect(0,0,maskC.width,maskC.height);
+    if(savedMask){ try{ mctx.putImageData(savedMask,0,0); }catch(e){} savedMask=null; }
+  }
 }
 document.querySelectorAll('#modes .mode').forEach(b=>b.onclick=()=>setTask(b.dataset.task));
 document.querySelectorAll('#enhanceWrap .sc').forEach(b=>b.onclick=()=>{
@@ -356,7 +404,13 @@ function stroke(a,b){ mctx.globalCompositeOperation=(tool==="erase")?"destinatio
   mctx.beginPath(); mctx.arc(b.x,b.y,rad(),0,7); mctx.fill(); }
 
 maskC.addEventListener("pointerdown",e=>{ if(!fileId)return; e.preventDefault();
-  maskC.setPointerCapture(e.pointerId); drawing=true; const p=pos(e);
+  const p=pos(e);
+  if(task==='reframe'){                 // tap = pin the crop focus point
+    setFocus({x:Math.min(1,Math.max(0,p.x/(maskC.width||1))),
+              y:Math.min(1,Math.max(0,p.y/(maskC.height||1)))});
+    return;
+  }
+  maskC.setPointerCapture(e.pointerId); drawing=true;
   if(tool==="box"){ boxStart=p; boxSnap=mctx.getImageData(0,0,maskC.width,maskC.height); }
   else { last=p; stroke(p,p); } });
 maskC.addEventListener("pointermove",e=>{ if(!drawing)return; const p=pos(e);
@@ -367,6 +421,30 @@ maskC.addEventListener("pointermove",e=>{ if(!drawing)return; const p=pos(e);
 function endDraw(){ drawing=false; last=boxStart=boxSnap=null; }
 maskC.addEventListener("pointerup",endDraw);
 maskC.addEventListener("pointercancel",endDraw);
+
+/* ---------- reframe focus pin (tap the frame to lock the crop center) ---------- */
+let focusPt=null;                       // {x,y} normalized 0..1, null = auto-track
+function drawFocus(){
+  mctx.clearRect(0,0,maskC.width,maskC.height);
+  if(!focusPt) return;
+  const x=focusPt.x*maskC.width, y=focusPt.y*maskC.height,
+        r=Math.max(10,maskC.width*0.03);
+  mctx.globalCompositeOperation="source-over";
+  mctx.strokeStyle="#8fa6ff"; mctx.lineWidth=Math.max(2.5,r*0.22); mctx.lineCap="round";
+  mctx.beginPath(); mctx.arc(x,y,r,0,7); mctx.stroke();
+  mctx.beginPath();
+  mctx.moveTo(x-r*1.8,y); mctx.lineTo(x-r*0.6,y); mctx.moveTo(x+r*0.6,y); mctx.lineTo(x+r*1.8,y);
+  mctx.moveTo(x,y-r*1.8); mctx.lineTo(x,y-r*0.6); mctx.moveTo(x,y+r*0.6); mctx.lineTo(x,y+r*1.8);
+  mctx.stroke();
+}
+function setFocus(p){
+  focusPt=p; if(task==='reframe') drawFocus();
+  $("fClear").style.display=p?'':'none';
+  $("focusLbl").textContent=p
+    ? `Focus: pinned at ${Math.round(p.x*100)}%, ${Math.round(p.y*100)}% — the crop stays locked there`
+    : 'Focus: auto — tracks faces & motion';
+}
+$("fClear").onclick=()=>setFocus(null);
 
 function maskEmpty(){ const d=mctx.getImageData(0,0,maskC.width,maskC.height).data;
   for(let i=3;i<d.length;i+=4) if(d[i]>10) return false; return true; }
@@ -403,22 +481,52 @@ $("tAuto").onclick=async()=>{
   }catch(e){ btn.textContent="✨ Auto-detect"; }
 };
 
-$("up").onclick = async () => {
+/* ---------- upload (robust to a cold / sleeping server) ---------- */
+function ping(ms){                       // resolves true if the API answers in time
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms);
+  return fetch(API+"/api/health",{cache:"no-store",signal:c.signal})
+    .then(r=>r.ok).catch(()=>false).finally(()=>clearTimeout(t));
+}
+let uploading=false;
+async function doUpload(){
   const f=$("file").files[0]; if(!f){alert("Choose a video first.");return;}
-  $("meta").textContent="Uploading…";
-  const fd=new FormData(); fd.append("file",f);
+  if(uploading) return;                  // the button is locked while in flight
+  uploading=true; const btn=$("up"); btn.disabled=true; const label=btn.textContent;
   try{
-    const r=await fetch(API+"/api/upload",{method:"POST",body:fd});
-    const d=await r.json();
-    if(!r.ok){$("meta").textContent="Error: "+(d.detail||"upload failed");return;}
+    btn.textContent="Connecting…"; $("meta").textContent="Connecting to the server…";
+    if(!await ping(6000)){               // cold start: wake it, waiting patiently
+      btn.textContent="Waking server…";
+      $("meta").textContent="Waking the server… (it naps between visits — ~30 s)";
+      if(!await ping(45000)) await ping(45000);       // second chance, still free
+    }
+    btn.textContent="Uploading…"; $("meta").textContent="Uploading…";
+    let r=null,d=null;
+    for(let attempt=0;attempt<2;attempt++){           // auto-retry once on failure
+      try{
+        const fd=new FormData(); fd.append("file",f);
+        r=await fetch(API+"/api/upload",{method:"POST",body:fd});
+        d=await r.json(); break;
+      }catch(e){ r=null;
+        if(attempt===0){ $("meta").textContent="Hiccup while uploading — retrying…";
+          await new Promise(res=>setTimeout(res,2500)); }
+      }
+    }
+    if(!r){ $("meta").textContent="Could not reach the server — check your connection and try again."; return; }
+    if(!r.ok){ $("meta").textContent="Error: "+((d&&d.detail)||"upload failed"); return; }
     fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
+    if(beforeURL) URL.revokeObjectURL(beforeURL);
+    beforeURL=URL.createObjectURL(f);    // the "before" side of Compare
     $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
     refC.width=maskC.width=vw; refC.height=maskC.height=vh;
     mctx.clearRect(0,0,vw,vh);
+    savedMask=null; setFocus(null); resetCompare();
     $("prev").disabled=false; $("exp").disabled=false;
     setTask(task);                       // reveals the right controls + loads the canvas
-  }catch(e){$("meta").textContent="Network error — is the API URL set in config.js?";}
-};
+  } finally { uploading=false; btn.disabled=false; btn.textContent=label; }
+}
+$("up").addEventListener("click",doUpload);
+$("file").addEventListener("change",()=>{ if($("file").files[0]&&!uploading) $("meta").textContent="Ready — hit Upload."; });
+ping(20000);                             // pre-warm a sleeping server on page load
 
 async function run(kind){
   if(!fileId){alert("Upload a video first.");return;}
@@ -431,9 +539,18 @@ async function run(kind){
   } else if(task==='enhance'){
     body.scale=enhScale; body.denoise=$("denoise").checked;
     body.strength=(+$("sharpAmt").value)/100;
-  } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel; }
-  $("prog").style.width="6%"; $("status").textContent="Submitting…";
+  } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel;
+    if(focusPt&&fitSel==='crop') body.focus=[focusPt.x,focusPt.y];
+  }
+  const RUN_COPY={remove:"Submitting — analysing the watermark…",
+    erase:"Submitting — analysing the marked region…",
+    enhance:"Submitting — enhancement starts in a moment…",
+    reframe:(focusPt&&fitSel==='crop'&&task==='reframe')
+      ?"Submitting — cropping around your focus point…"
+      :"Submitting — smart-tracking the subject…"};
+  $("prog").style.width="6%"; $("status").textContent=RUN_COPY[task]||"Submitting…";
   $("dl").style.display="none"; $("retry").style.display="none";
+  resetCompare();
   try{
     const r=await fetch(API+"/api/jobs",{method:"POST",
       headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify(body)});
@@ -460,21 +577,79 @@ async function poll(id, t, fails=0){
     $("status").textContent=j.message||j.status;
     if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
+      compareReady(u,t);
       const editTask=(t==='remove'||t==='erase');
       $("retry").style.display=editTask?"block":"none";
       if(j.qc && editTask){const c=Math.round((j.qc.confidence||0)*100);
-        if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%)`; }
+        if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%) — flip to Compare to check it.`; }
         else { $("status").innerHTML=`Quality ${c}% — some of it may remain. `+
           `For a spotless result, adjust your highlight on the canvas above and re-run.`; }
-      } else { $("status").textContent="Done ✓"; }
+      } else { $("status").textContent="Done ✓ — flip to Compare to see before / after."; }
       return;}
-    if(j.status==="error"){$("status").textContent="Failed: "+(j.error||""); return;}
+    if(j.status==="error"){ $("prog").style.width="0";
+      $("status").textContent="⚠ "+(j.error||"Processing failed.")+
+        " Tweak your settings and try again — previews are free."; return; }
     setTimeout(()=>poll(id,t),1200);
   }catch(e){
-    if(fails<12){ $("status").textContent="Working… (server waking up, ~30s)"; setTimeout(()=>poll(id,t,fails+1),3000); }
-    else { $("status").textContent="Lost connection to the API. Please try again."; }
+    if(fails<12){ $("status").textContent="Still working… the server may be waking from a nap (~30 s) — hang tight.";
+      setTimeout(()=>poll(id,t,fails+1),3000); }
+    else { $("status").textContent="Lost the connection while processing. The job may still be running — try again in a minute."; }
   }
 }
+/* ---------- before / after compare ---------- */
+let beforeURL=null, afterURL=null, cmpTask='remove', cmpPos=0.6;
+const cmpA=$("cmpA"), cmpB=$("cmpB"), sbsA=$("sbsA"), sbsB=$("sbsB");
+function setCmpPos(p){                     // divider position, 0..1 of the width
+  cmpPos=Math.min(0.94,Math.max(0.06,p));
+  cmpB.style.clipPath=`inset(0 ${(100-cmpPos*100).toFixed(2)}% 0 0)`;
+  $("cmpDiv").style.left=`calc(${(cmpPos*100).toFixed(2)}% - 1px)`;
+}
+function cmpSync(a,b){                     // the AFTER video drives; BEFORE follows
+  if(Math.abs((b.currentTime||0)-(a.currentTime||0))>0.25){
+    try{ b.currentTime=a.currentTime||0; }catch(e){}
+  }
+}
+cmpA.addEventListener('timeupdate',()=>cmpSync(cmpA,cmpB));
+sbsA.addEventListener('timeupdate',()=>cmpSync(sbsA,sbsB));
+function showView(mode){                   // 'result' | 'compare'
+  const cmp=(mode==='compare'&&afterURL&&beforeURL);
+  $("vResult").classList.toggle('active',!cmp);
+  $("vCompare").classList.toggle('active',!!cmp);
+  const slide=(cmpTask!=='reframe');       // reframe changes aspect -> side-by-side
+  $("out").style.display=cmp?'none':'';
+  $("cmpSlide").style.display=(cmp&&slide)?'block':'none';
+  $("cmpSbs").style.display=(cmp&&!slide)?'flex':'none';
+  $("cmpHint").style.display=(cmp&&slide)?'block':'none';
+  if(cmp){
+    try{ $("out").pause(); }catch(e){}
+    const A=slide?cmpA:sbsA, B=slide?cmpB:sbsB;
+    if(A.getAttribute('src')!==afterURL) A.src=afterURL;    // lazy-load on first open
+    if(B.getAttribute('src')!==beforeURL) B.src=beforeURL;
+    if(slide) setCmpPos(cmpPos);
+    A.play().catch(()=>{}); B.play().catch(()=>{});
+  } else {
+    [cmpA,cmpB,sbsA,sbsB].forEach(v=>{ try{ v.pause(); }catch(e){} });
+  }
+}
+$("vResult").onclick=()=>showView('result');
+$("vCompare").onclick=()=>showView('compare');
+function compareReady(url,t){              // a job finished -> offer the toggle
+  afterURL=url; cmpTask=t;
+  $("viewBar").style.display=beforeURL?'flex':'none';
+}
+function resetCompare(){                   // new upload / new job -> back to Result
+  afterURL=null; $("viewBar").style.display='none'; showView('result');
+  [cmpA,cmpB,sbsA,sbsB].forEach(v=>v.removeAttribute('src'));
+}
+/* drag (or tap) anywhere on the slider to sweep before/after */
+let cmpDrag=false; const slideEl=$("cmpSlide");
+function cmpFromEvent(e){ const r=slideEl.getBoundingClientRect();
+  setCmpPos((e.clientX-r.left)/(r.width||1)); }
+slideEl.addEventListener('pointerdown',e=>{ e.preventDefault(); cmpDrag=true;
+  try{ slideEl.setPointerCapture(e.pointerId); }catch(x){} cmpFromEvent(e); });
+slideEl.addEventListener('pointermove',e=>{ if(cmpDrag) cmpFromEvent(e); });
+['pointerup','pointercancel'].forEach(ev=>slideEl.addEventListener(ev,()=>cmpDrag=false));
+
 setTask('remove');   // sync the per-mode controls once at startup
 </script>
 </body>
