@@ -246,23 +246,49 @@ def autodetect(fid: str):
                     headers={"X-Watermark-Type": det.get("type", "none")})
 
 
+@app.post("/api/detect_regions/{fid}")
+def detect_regions(fid: str, targets: str = "face"):
+    """Privacy-blur helper: run the face/plate detectors on the SAME still the
+    editor canvas shows and return the boxes, so the user can preview what
+    will be blurred. targets = comma list from {'face', 'plate'}."""
+    meta = FILES.get(fid)
+    if not meta:
+        raise HTTPException(404, "Unknown file_id (upload first).")
+    tgs = [t.strip().lower() for t in (targets or "").split(",") if t.strip()]
+    if not tgs or any(t not in ("face", "plate") for t in tgs):
+        raise HTTPException(400, "targets must be a comma list of 'face' / 'plate'.")
+    cache = meta.get("_frame")
+    if cache is not None:                       # reuse the canvas still if cached
+        f = cv2.imdecode(np.frombuffer(cache, np.uint8), cv2.IMREAD_COLOR)
+    else:
+        f, idx = wr.sharpest_frame(meta["path"], with_index=True)
+        if f is not None:
+            meta["_sharp_t"] = idx / max(meta.get("fps") or 24.0, 1e-6)
+    if f is None:
+        raise HTTPException(400, "Could not read a frame from that video.")
+    boxes = [[int(round(v)) for v in b] for b in wr.detect_privacy_boxes(f, tgs)]
+    return {"boxes": boxes, "targets": tgs}
+
+
 class JobRequest(BaseModel):
     file_id: str
     mode: str = "preview"                 # 'preview' (free) | 'export' (paid)
-    task: str = "remove"                  # remove | erase | enhance | reframe
+    task: str = "remove"                  # remove | erase | enhance | reframe | blur
     owns_rights: bool = False
     boxes: list[list[int]] | None = None  # [[x,y,w,h], ...]
     mask: str | None = None               # base64 PNG (white = remove) from the canvas editor
     auto: bool = True
     upscale: bool = True
     protect: bool = True
-    track: bool = False                   # erase: follow a moving object
+    track: bool = False                   # erase/blur: follow a moving marked region
     scale: float = 1.0                    # enhance: 1.0 | 2.0
     denoise: bool = True                  # enhance: hqdn3d + deblock
-    strength: float = 0.6                 # enhance: sharpen strength 0..1
+    strength: float = 0.6                 # enhance: sharpen 0..1 | blur: coarseness 0..1
     ratio: str = "9:16"                   # reframe: 9:16 | 1:1 | 4:5 ...
     fit: str = "crop"                     # reframe: crop | blur
     focus: list[float] | None = None      # reframe: [x, y] normalized 0..1 pins the crop center
+    targets: list[str] | None = None      # blur: subset of {'face', 'plate'}
+    style: str | None = None              # blur: 'blur' | 'pixelate'
 
 
 @app.post("/api/jobs")
@@ -275,10 +301,19 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
     task = (req.task or "remove").lower()
-    if task not in ("remove", "erase", "enhance", "reframe"):
-        raise HTTPException(400, "task must be remove | erase | enhance | reframe.")
+    if task not in ("remove", "erase", "enhance", "reframe", "blur"):
+        raise HTTPException(400, "task must be remove | erase | enhance | reframe | blur.")
     if task == "erase" and not (req.mask or req.boxes):
         raise HTTPException(400, "Brush over what you want erased first.")
+    if task == "blur":
+        blur_targets = [str(t).lower() for t in (req.targets or [])]
+        if any(t not in ("face", "plate") for t in blur_targets):
+            raise HTTPException(400, "targets may only include 'face' and/or 'plate'.")
+        blur_style = (req.style or "blur").lower()
+        if blur_style not in ("blur", "pixelate"):
+            raise HTTPException(400, "style must be 'blur' or 'pixelate'.")
+        if not blur_targets and not (req.mask or req.boxes):
+            raise HTTPException(400, "Pick faces/plates to blur — or brush a region first.")
     if task == "reframe":
         try:
             wr.parse_ratio(req.ratio)
@@ -303,19 +338,26 @@ def create_job(req: JobRequest, authorization: str | None = Header(default=None)
         "boxes": [tuple(b) for b in req.boxes] if req.boxes else None,
         "upscale": req.upscale, "protect": req.protect,
     }
-    if task in ("remove", "erase") and req.mask:
+    if task in ("remove", "erase", "blur") and req.mask:
         raw = base64.b64decode(req.mask.split(",", 1)[-1])     # tolerate data: URL prefix
         mpath = os.path.join(UPLOADS, f"{req.file_id}_{uuid.uuid4().hex[:8]}_mask.png")
         with open(mpath, "wb") as mf:
             mf.write(raw)
         params["mask_path"] = mpath
-        if not (task == "erase" and req.track):
+        if task != "blur" and not (task == "erase" and req.track):
             # remove — and now the static erase too — uses the (cached) temporal
             # mean/std so the engine can tell semi-transparent from opaque and
-            # pick reverse-blend vs straight inpaint. Tracked erases stay opaque.
+            # pick reverse-blend vs straight inpaint. Tracked erases stay opaque;
+            # blur needs NO watermark analysis at all (detection + obscuring only).
             meanf, std_gray = _mean_std(meta)
             params.update(meanf=meanf, std_gray=std_gray)
     if task == "erase":
+        params["track"] = bool(req.track)
+        params["track_ref"] = meta.get("_sharp_t")   # frame the user brushed on
+    elif task == "blur":
+        params["targets"] = blur_targets
+        params["style"] = blur_style
+        params["strength"] = max(0.0, min(1.0, float(req.strength)))
         params["track"] = bool(req.track)
         params["track_ref"] = meta.get("_sharp_t")   # frame the user brushed on
     elif task == "enhance":

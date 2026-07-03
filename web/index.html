@@ -136,6 +136,7 @@
       <button class="tool mode" data-task="erase">🧹 Erase objects</button>
       <button class="tool mode" data-task="enhance">✨ Enhance</button>
       <button class="tool mode" data-task="reframe">📱 Reframe</button>
+      <button class="tool mode" data-task="blur">🕶 Privacy blur</button>
     </div>
     <div class="grid2">
       <div>
@@ -160,10 +161,11 @@
             <label class="pill" style="display:flex;align-items:center;gap:6px">Size
               <input id="brushSize" type="range" min="6" max="90" value="28"/></label>
             <button class="tool" id="tAuto">✨ Auto-detect</button>
+            <button class="tool" id="tFaces" style="display:none">👁 Preview detection</button>
             <button class="tool" id="tClear">Clear</button>
           </div>
           <p class="hint" id="editorHint">Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.</p>
-          <label class="chk" id="trackWrap" style="display:none"><input id="trackChk" type="checkbox"/> Moving object — track it across the video</label>
+          <label class="chk" id="trackWrap" style="display:none"><input id="trackChk" type="checkbox"/> <span id="trackLbl">Moving object — track it across the video</span></label>
         </div>
         <div id="enhanceWrap" style="display:none">
           <div class="optrow"><span class="pill">Scale</span>
@@ -192,6 +194,19 @@
             <button class="tool" id="fClear" style="display:none">✖ Clear focus</button>
           </div>
           <p class="hint">Smart crop keeps faces &amp; motion centered with a smooth virtual camera. Pick blurred bars when the whole frame must stay visible.</p>
+        </div>
+        <div id="blurWrap" style="display:none">
+          <label class="chk" style="margin:6px 0"><input id="bFaces" type="checkbox" checked/> Blur faces</label>
+          <label class="chk" style="margin:6px 0"><input id="bPlates" type="checkbox"/> Blur license plates (beta)</label>
+          <div class="optrow"><span class="pill">Style</span>
+            <button class="tool bs active" data-style="blur">🌫 Blur</button>
+            <button class="tool bs" data-style="pixelate">🟪 Pixelate</button>
+          </div>
+          <div class="optrow"><span class="pill">Strength</span>
+            <input id="blurAmt" type="range" min="15" max="100" value="60"/>
+            <span class="pill" id="blurVal">60%</span>
+          </div>
+          <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
         </div>
 
         <label class="chk"><input id="owns" type="checkbox"/> I own or have the rights to edit this video</label>
@@ -240,6 +255,7 @@
     <div class="card"><h3>Object eraser</h3><p>Brush over a logo, timestamp, sign or bystander — gone in every frame.</p></div>
     <div class="card"><h3>Enhance &amp; upscale</h3><p>Denoise, deblock and adaptive sharpening, with optional 2× upscale.</p></div>
     <div class="card"><h3>Auto-reframe</h3><p>9:16, 1:1 or 4:5 with the subject kept centered — or blurred-bar fit.</p></div>
+    <div class="card"><h3>Privacy blur</h3><p>Auto-blur (or pixelate) faces and license plates across the clip — plus anything you brush.</p></div>
     <div class="card"><h3>Keeps detail &amp; audio</h3><p>Faces and texture protected; your original sound is copied through.</p></div>
     <div class="card"><h3>Free preview, low cost</h3><p>Check the result first; full exports use small credits.</p></div>
   </div>
@@ -249,7 +265,7 @@
   <details><summary>Is it free?</summary><p>Previews are free. Full exports use low-cost credits that cover GPU processing.</p></details>
   <details><summary>Will it blur my video or ruin faces?</summary><p>No — faces and detailed areas are protected and your audio is preserved, so the subject stays sharp.</p></details>
   <details><summary>What can I legally remove?</summary><p>Only content you own or are licensed to edit — e.g. your own free-tier exports, your old logo, or stray text/timecode.</p></details>
-  <details><summary>What else can it do besides watermarks?</summary><p>Erase any unwanted object (brush it once — tracking follows it if it moves), enhance &amp; upscale soft or noisy clips, and auto-reframe landscape video to 9:16, 1:1 or 4:5 with the subject kept in frame.</p></details>
+  <details><summary>What else can it do besides watermarks?</summary><p>Erase any unwanted object (brush it once — tracking follows it if it moves), enhance &amp; upscale soft or noisy clips, auto-reframe landscape video to 9:16, 1:1 or 4:5 with the subject kept in frame, and privacy-blur faces or license plates (auto-detected and tracked) plus any region you brush.</p></details>
 
   <footer>
     CleanReel is for content you own or are licensed to edit. Uploads are processed only for your request.
@@ -266,8 +282,8 @@ $("yr").textContent = new Date().getFullYear();
 let fileId=null, vw=0, vh=0;
 
 /* ---------- modes (tasks) ---------- */
-let task='remove';                 // remove | erase | enhance | reframe
-let enhScale=1, ratioSel='9:16', fitSel='crop';
+let task='remove';                 // remove | erase | enhance | reframe | blur
+let enhScale=1, ratioSel='9:16', fitSel='crop', blurStyle='blur';
 const TASK_COPY={
   remove:{tag:'Step 2 · Highlight the watermark',
     need:'Upload a video and I\'ll show a frame with the watermark highlighted for you to mark.',
@@ -279,13 +295,16 @@ const TASK_COPY={
     need:'Upload a video to enhance — options are below.'},
   reframe:{tag:'Step 2 · Pick the new shape',
     need:'Upload a video to reframe — pick the aspect below, then (optionally) tap the frame to pin the crop.',
-    hint:'Optional: <b>tap the frame</b> to pin the crop centre — a crosshair marks it and the camera stays locked there. No pin = smart auto-tracking (faces &amp; motion). <b>✖ Clear focus</b> returns to auto.'}
+    hint:'Optional: <b>tap the frame</b> to pin the crop centre — a crosshair marks it and the camera stays locked there. No pin = smart auto-tracking (faces &amp; motion). <b>✖ Clear focus</b> returns to auto.'},
+  blur:{tag:'Step 2 · Choose what to blur',
+    need:'Upload a video — faces are blurred automatically; you can brush extra areas too.',
+    hint:'Faces (and plates, if ticked) are found and blurred in every frame — hit <b>👁 Preview detection</b> to see what\'s caught. Brush anything else (a name tag, a screen, an address) and it\'s blurred too. If a brushed region moves, tick <b>Moving region</b> below.'}
 };
 let savedMask=null;                  // remove/erase paint, parked while in reframe
 function setTask(t){
   const was=task; task=t;
   document.querySelectorAll('#modes .mode').forEach(b=>b.classList.toggle('active',b.dataset.task===t));
-  const ed=(t==='remove'||t==='erase');            // mask-editor modes
+  const ed=(t==='remove'||t==='erase'||t==='blur');// mask-editor modes
   const canv=ed||t==='reframe';                    // modes that show the canvas
   $("step2Tag").textContent=TASK_COPY[t].tag;
   $("needUpload").innerHTML=TASK_COPY[t].need;
@@ -293,9 +312,14 @@ function setTask(t){
   $("editorWrap").style.display=(canv&&fileId)?'block':'none';
   $("enhanceWrap").style.display=(t==='enhance')?'block':'none';
   $("reframeWrap").style.display=(t==='reframe')?'block':'none';
+  $("blurWrap").style.display=(t==='blur')?'block':'none';
   $("toolbar").style.display=ed?'':'none';
   $("tAuto").style.display=(t==='remove')?'':'none';
-  $("trackWrap").style.display=(t==='erase')?'flex':'none';
+  $("tFaces").style.display=(t==='blur')?'':'none';
+  $("trackWrap").style.display=(t==='erase'||t==='blur')?'flex':'none';
+  $("trackLbl").textContent=(t==='blur')
+    ?'Moving region — track my brushed area across the video'
+    :'Moving object — track it across the video';
   maskC.style.opacity=(t==='reframe')?'0.9':'0.5'; // focus pin should read clearly
   if(canv){ $("editorHint").innerHTML=TASK_COPY[t].hint; if(fileId) loadBase(); }
   if(was!=='reframe'&&t==='reframe'){              // park the paint, show the pin
@@ -317,6 +341,10 @@ document.querySelectorAll('#reframeWrap .ft').forEach(b=>b.onclick=()=>{
   fitSel=b.dataset.fit;
   document.querySelectorAll('#reframeWrap .ft').forEach(x=>x.classList.toggle('active',x===b)); });
 $("sharpAmt").oninput=()=>$("sharpVal").textContent=$("sharpAmt").value+'%';
+document.querySelectorAll('#blurWrap .bs').forEach(b=>b.onclick=()=>{
+  blurStyle=b.dataset.style;
+  document.querySelectorAll('#blurWrap .bs').forEach(x=>x.classList.toggle('active',x===b)); });
+$("blurAmt").oninput=()=>$("blurVal").textContent=$("blurAmt").value+'%';
 
 /* ---------- accounts (magic-link) ---------- */
 let auth = JSON.parse(localStorage.getItem('cr_auth')||'null');   // {session,email,credits}
@@ -461,10 +489,27 @@ async function loadBase(){
   try{
     if(!baseCache[key]){ const r=await fetch(API+`/api/${kind}/${fileId}`);
       if(!r.ok) return; baseCache[key]=URL.createObjectURL(await r.blob()); }
-    const img=new Image(); img.onload=()=>rctx.drawImage(img,0,0,refC.width,refC.height);
-    img.src=baseCache[key];
+    await new Promise(res=>{ const img=new Image();
+      img.onload=()=>{ rctx.drawImage(img,0,0,refC.width,refC.height); res(); };
+      img.onerror=res; img.src=baseCache[key]; });
   }catch(e){}
 }
+/* blur mode: outline what the face/plate detectors catch on the canvas still */
+$("tFaces").onclick=async()=>{
+  if(!fileId)return; const btn=$("tFaces"); btn.textContent="Detecting…";
+  const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');
+  try{
+    const r=await fetch(API+`/api/detect_regions/${fileId}?targets=`+
+      encodeURIComponent((tg.length?tg:['face']).join(',')),{method:'POST'});
+    const d=await r.json();
+    await loadBase();                          // clean still, then draw the boxes
+    const bx=(r.ok&&d.boxes)||[];
+    rctx.strokeStyle='#36d39b'; rctx.lineWidth=Math.max(2,refC.width*0.004);
+    bx.forEach(([x,y,w,h])=>rctx.strokeRect(x,y,w,h));
+    btn.textContent=bx.length?`👁 Found ${bx.length} on this frame`:'👁 None here — brush it instead';
+    setTimeout(()=>{ btn.textContent='👁 Preview detection'; },3500);
+  }catch(e){ btn.textContent='👁 Preview detection'; }
+};
 $("tAuto").onclick=async()=>{
   if(!fileId)return; const btn=$("tAuto"); btn.textContent="Detecting…";
   try{
@@ -541,10 +586,16 @@ async function run(kind){
     body.strength=(+$("sharpAmt").value)/100;
   } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel;
     if(focusPt&&fitSel==='crop') body.focus=[focusPt.x,focusPt.y];
+  } else if(task==='blur'){
+    const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');
+    if(!tg.length&&maskEmpty()){alert("Tick faces or plates to blur — or brush a region first.");return;}
+    body.targets=tg; body.style=blurStyle; body.strength=(+$("blurAmt").value)/100;
+    if(!maskEmpty()){ body.mask=maskPNG(); body.track=$("trackChk").checked; }
   }
   const RUN_COPY={remove:"Submitting — analysing the watermark…",
     erase:"Submitting — analysing the marked region…",
     enhance:"Submitting — enhancement starts in a moment…",
+    blur:"Submitting — finding faces/plates to blur…",
     reframe:(focusPt&&fitSel==='crop'&&task==='reframe')
       ?"Submitting — cropping around your focus point…"
       :"Submitting — smart-tracking the subject…"};
@@ -578,7 +629,7 @@ async function poll(id, t, fails=0){
     if(j.status==="done"){const u=API+j.result_url+"?t="+Date.now();
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
       compareReady(u,t);
-      const editTask=(t==='remove'||t==='erase');
+      const editTask=(t==='remove'||t==='erase'||t==='blur');
       $("retry").style.display=editTask?"block":"none";
       if(j.qc && editTask){const c=Math.round((j.qc.confidence||0)*100);
         if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%) — flip to Compare to check it.`; }

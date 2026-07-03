@@ -111,7 +111,7 @@ class JobManager:
 
     def _run(self, job: Job, params: dict):
         video = params["video_path"]
-        task = params.get("task", "remove")     # remove | erase | enhance | reframe
+        task = params.get("task", "remove")     # remove | erase | enhance | reframe | blur
         seconds = PREVIEW_SECONDS if job.mode == "preview" else None
         out = os.path.join(self.storage, "results", f"{job.id}.mp4")
 
@@ -152,6 +152,39 @@ class JobManager:
             wr.reframe_video(video, out, ratio=ratio, fit=fit, preview=seconds,
                              max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
                              focus=focus, progress_cb=render_progress)
+            job.result_path = out
+            return
+
+        # ---------- PRIVACY BLUR: auto faces/plates + optional manual regions ----------
+        if task == "blur":
+            tg = params.get("targets")           # None = default; [] = explicit none
+            targets = [t for t in (["face"] if tg is None else tg)
+                       if t in ("face", "plate")]
+            style = params.get("style") or "blur"
+            strength = max(0.0, min(1.0, float(params.get("strength", 0.6))))
+            w, h, fps, n = wr.probe(video)
+            mask = None
+            if params.get("mask_path"):
+                mask = wr.mask_from_painted(params["mask_path"], h, w)
+            elif params.get("boxes"):
+                mask = wr.mask_from_boxes(params["boxes"], h, w)
+            if mask is not None and mask.sum() == 0:
+                mask = None
+            if not targets and mask is None:
+                raise RuntimeError("Pick faces and/or license plates to blur — "
+                                   "or brush a region first.")
+            names = " + ".join("faces" if t == "face" else "license plates"
+                               for t in targets)
+            job.progress = 0.15
+            job.message = (f"Finding and blurring {names}..." if targets
+                           else "Blurring your marked region...")
+            # No watermark analysis needed — blur is detection + obscuring only.
+            wr.blur_video(video, out, targets=tuple(targets), style=style,
+                          strength=strength, mask01=mask,
+                          track=bool(params.get("track")) and mask is not None,
+                          track_ref=params.get("track_ref"), preview=seconds,
+                          max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
+                          progress_cb=render_progress)
             job.result_path = out
             return
 

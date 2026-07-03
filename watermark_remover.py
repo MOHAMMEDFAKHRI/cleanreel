@@ -745,6 +745,248 @@ def reframe_video(path, out, ratio="9:16", fit="crop", preview=None, max_dim=Non
 
 
 # --------------------------------------------------------------------------- #
+# Privacy blur (auto face / license-plate blurring + manual user regions)
+# --------------------------------------------------------------------------- #
+_PRIVACY_CASCADES: dict = {}
+def _privacy_cascade(name):
+    """Load (and cache) a Haar cascade bundled with OpenCV, or None."""
+    if name not in _PRIVACY_CASCADES:
+        try:
+            c = cv2.CascadeClassifier(os.path.join(cv2.data.haarcascades, name))
+            _PRIVACY_CASCADES[name] = c if not c.empty() else None
+        except Exception:
+            _PRIVACY_CASCADES[name] = None
+    return _PRIVACY_CASCADES[name]
+
+# target -> (cascade file, scaleFactor, minNeighbors, also_run_mirrored)
+# 'plate' uses the Russian-plate cascade as a GENERIC plate detector — it fires
+# on most landscape plates but is approximate (labelled "beta" in the UI).
+PRIVACY_TARGETS = {
+    "face":  [("haarcascade_frontalface_default.xml", 1.10, 4, False),
+              ("haarcascade_profileface.xml",         1.10, 4, True)],
+    "plate": [("haarcascade_russian_plate_number.xml", 1.08, 4, False)],
+}
+
+def _detect_boxes(gray, targets):
+    """Haar detections for the given targets on one grayscale frame.
+    Returns [(x, y, w, h), ...] in `gray` pixel coords."""
+    gh, gw = gray.shape[:2]
+    out = []
+    for t in targets:
+        for name, sf, mn, mirror in PRIVACY_TARGETS.get(t, ()):
+            c = _privacy_cascade(name)
+            if c is None:
+                continue
+            ms = (max(18, gh // 14),) * 2 if t == "face" else (0, 0)
+            passes = [gray, cv2.flip(gray, 1)] if mirror else [gray]
+            for pi, img in enumerate(passes):
+                det = c.detectMultiScale(img, sf, mn, minSize=ms)
+                for (x, y, bw, bh) in det:
+                    if pi:                       # mirrored pass -> unmirror the box
+                        x = gw - int(x) - int(bw)
+                    out.append((int(x), int(y), int(bw), int(bh)))
+    return out
+
+
+def detect_privacy_boxes(frame, targets):
+    """Privacy detections for ONE BGR frame, in FULL frame coords (floats).
+    Detection runs on a downscaled gray for speed; plates get a bit more
+    resolution because the plate cascade's window is comparatively large."""
+    h, w = frame.shape[:2]
+    dw = min(720 if "plate" in targets else 560, w)
+    dh = max(2, int(round(h * dw / w)))
+    small = frame if dw == w else cv2.resize(frame, (dw, dh), interpolation=cv2.INTER_AREA)
+    g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    kx, ky = w / float(dw), h / float(dh)
+    return [(x * kx, y * ky, bw * kx, bh * ky)
+            for (x, y, bw, bh) in _detect_boxes(g, targets)]
+
+
+class _RegionTracker:
+    """Temporal smoothing for per-frame privacy detections so the blur is
+    STABLE instead of flickery: each detection is matched to a live track by
+    center distance, track geometry is EMA-damped, a track is HELD for `hold`
+    frames after its detector drops out (Haar flickers; faces turn), and the
+    reported boxes are expanded by `expand` so edges/ears stay covered."""
+    def __init__(self, hold=12, ema=0.35, expand=0.18):
+        self.tracks = []                 # dicts: cx, cy, w, h, ttl
+        self.hold = max(1, int(hold)); self.ema = float(ema); self.expand = float(expand)
+
+    def update(self, det):
+        fresh = [[x + bw / 2.0, y + bh / 2.0, float(bw), float(bh)]
+                 for (x, y, bw, bh) in det]
+        used = [False] * len(fresh)
+        for t in self.tracks:
+            best, bd = None, None
+            for j, f in enumerate(fresh):
+                if used[j]:
+                    continue
+                d = float(np.hypot(f[0] - t["cx"], f[1] - t["cy"]))
+                if d < 0.75 * max(t["w"], t["h"], f[2], f[3]) and (bd is None or d < bd):
+                    best, bd = j, d
+            if best is not None:
+                f = fresh[best]; used[best] = True; a = self.ema
+                t["cx"] += a * (f[0] - t["cx"]); t["cy"] += a * (f[1] - t["cy"])
+                t["w"] += a * (f[2] - t["w"]);   t["h"] += a * (f[3] - t["h"])
+                t["ttl"] = self.hold
+            else:
+                t["ttl"] -= 1                    # briefly lost: keep blurring its spot
+        self.tracks = [t for t in self.tracks if t["ttl"] > 0]
+        for j, f in enumerate(fresh):
+            if not used[j]:
+                self.tracks.append(dict(cx=f[0], cy=f[1], w=f[2], h=f[3], ttl=self.hold))
+        return self.boxes()
+
+    def boxes(self):
+        out = []
+        for t in self.tracks:
+            bw = t["w"] * (1.0 + self.expand); bh = t["h"] * (1.0 + self.expand)
+            out.append((t["cx"] - bw / 2.0, t["cy"] - bh / 2.0, bw, bh))
+        return out
+
+
+def _blur_patch(roi, style="blur", strength=0.6):
+    """A fully-obscured copy of an ROI. 'blur' = very strong Gaussian done as
+    downscale -> blur -> upscale (fast at ANY region size, radius scales with
+    region size and strength); 'pixelate' = mosaic. Floors guarantee the
+    region is genuinely unrecognizable even at the lowest strength."""
+    h, w = roi.shape[:2]
+    s = min(1.0, max(0.15, float(strength)))
+    if style == "pixelate":
+        cell = max(4, int(round(min(h, w) * (0.09 + 0.16 * s))))
+        sw, sh = max(1, w // cell), max(1, h // cell)
+        small = cv2.resize(roi, (sw, sh), interpolation=cv2.INTER_AREA)
+        return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+    k = max(3, int(round(min(h, w) * (0.06 + 0.14 * s))))
+    small = cv2.resize(roi, (max(1, w // k), max(1, h // k)), interpolation=cv2.INTER_AREA)
+    small = cv2.GaussianBlur(small, (0, 0), 2.0)
+    return cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)
+
+
+def _obscure_boxes(frame, boxes, style, strength):
+    """Obscure rectangular regions in-place (boxes may be floats; clamped)."""
+    h, w = frame.shape[:2]
+    for (x, y, bw, bh) in boxes:
+        x0, y0 = max(0, int(round(x))), max(0, int(round(y)))
+        x1, y1 = min(w, int(round(x + bw))), min(h, int(round(y + bh)))
+        if x1 - x0 < 2 or y1 - y0 < 2:
+            continue
+        frame[y0:y1, x0:x1] = _blur_patch(frame[y0:y1, x0:x1], style, strength)
+
+
+def _obscure_masked(frame, mask01, style, strength, rect=None):
+    """Obscure an arbitrary painted region in-place (only inside its bounding
+    rect, so a small brushed spot doesn't cost a full-frame blur)."""
+    if rect is None:
+        ys, xs = np.where(mask01 > 0)
+        if len(ys) == 0:
+            return
+        rect = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    x0, y0, x1, y1 = rect
+    if x1 - x0 < 2 or y1 - y0 < 2:
+        return
+    roi = frame[y0:y1, x0:x1]
+    patch = _blur_patch(roi, style, strength)
+    m = mask01[y0:y1, x0:x1] > 0
+    roi[m] = patch[m]
+
+
+def blur_video(path, out, targets=("face",), style="blur", strength=0.6,
+               mask01=None, boxes=None, track=False, track_ref=None,
+               preview=None, max_dim=None, progress_cb=None):
+    """Privacy blur: auto-detect faces and/or license plates in EVERY frame and
+    obscure them, plus (optionally) user-marked regions. Detections are
+    tracked & smoothed (_RegionTracker) so the blur holds steady through Haar
+    flicker and head turns. Audio is preserved.
+      targets   subset of {'face', 'plate'} to auto-detect (may be empty when
+                a manual mask/boxes region is given)
+      style     'blur' (strong Gaussian) | 'pixelate' (mosaic)
+      strength  0..1 — how coarse the obscuring is (floored to stay opaque)
+      mask01 / boxes   user-marked extra region(s), unioned with the auto ones
+      track     True = the marked region MOVES; follow it by template matching
+                (mark once -> follow), track_ref = reference time in seconds
+      preview   only the first N seconds;  max_dim caps the OUTPUT long side
+    Raises RuntimeError (friendly message) when there is nothing to blur."""
+    w, h, fps, n = probe(path)
+    limit = int(preview * fps) if preview else None
+    targets = tuple(t for t in (targets or ()) if t in PRIVACY_TARGETS)
+    if style not in ("blur", "pixelate"):
+        style = "blur"
+
+    man_mask = None
+    if mask01 is not None and np.asarray(mask01).max() > 0:
+        man_mask = (np.asarray(mask01) > 0).astype(np.uint8)
+        if man_mask.shape != (h, w):
+            man_mask = cv2.resize(man_mask, (w, h), interpolation=cv2.INTER_NEAREST)
+    elif boxes:
+        man_mask = mask_from_boxes(boxes, h, w)
+    if man_mask is not None and man_mask.max() == 0:
+        man_mask = None
+    if not targets and man_mask is None:
+        raise RuntimeError("Nothing to blur — pick faces/plates, or brush a region.")
+
+    trk = None; man_rect = None
+    if man_mask is not None:
+        if track:
+            trk = _track_setup(path, ref=track_ref, mask01=man_mask)
+        else:
+            ys, xs = np.where(man_mask > 0)
+            man_rect = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+
+    if targets and man_mask is None:
+        # Quick pre-scan (one frame at a time — memory-safe): if the detectors
+        # see nothing anywhere, say so instead of rendering an untouched copy.
+        step = max(1, int(limit or n or 240) // 12)
+        found = False
+        for i, f in enumerate(frames_iter(path, limit)):
+            if i % step:
+                continue
+            if detect_privacy_boxes(f, targets):
+                found = True; break
+        if not found:
+            names = " or ".join("faces" if t == "face" else "license plates" for t in targets)
+            raise RuntimeError(f"No {names} found — brush the area to blur, "
+                               "or pick a different target.")
+
+    ow, oh = w, h
+    if max_dim and max(w, h) > max_dim:
+        sc = max_dim / float(max(w, h)); ow, oh = _even(w * sc), _even(h * sc)
+    target = (ow, oh) if (ow, oh) != (w, h) else None
+
+    tracker = _RegionTracker(hold=max(4, int(round(fps * 0.5)))) if targets else None
+    tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
+    enc = Encoder(w, h, fps, raw, upscale=target, sharpen=False)
+    total = limit or n
+    for k, f in enumerate(frames_iter(path, limit)):
+        if tracker is not None:
+            _obscure_boxes(f, tracker.update(detect_privacy_boxes(f, targets)),
+                           style, strength)
+        if man_mask is not None:
+            if trk is not None:
+                # moving manual region: template-match it in this frame
+                g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+                res = cv2.matchTemplate(g, trk["template"], cv2.TM_CCOEFF_NORMED)
+                _, _, _, loc = cv2.minMaxLoc(res)
+                mr = trk["mask_roi"]; th_, tw_ = mr.shape
+                nx, ny = int(loc[0]), int(loc[1])
+                y0, x0 = max(0, ny), max(0, nx)
+                y1, x1 = min(h, ny + th_), min(w, nx + tw_)
+                if y1 > y0 and x1 > x0:
+                    eff = np.zeros((h, w), np.uint8)
+                    eff[y0:y1, x0:x1] = mr[y0 - ny:y1 - ny, x0 - nx:x1 - nx]
+                    _obscure_masked(f, eff, style, strength, rect=(x0, y0, x1, y1))
+            else:
+                _obscure_masked(f, man_mask, style, strength, rect=man_rect)
+        enc.write(f)
+        if progress_cb and total and k % 10 == 0:
+            progress_cb(k + 1, total)
+        if k % 50 == 0:
+            print(f"  frame {k+1}/{total or '?'}", flush=True)
+    enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
+    print(f"done -> {out}")
+
+
+# --------------------------------------------------------------------------- #
 # Core processing
 # --------------------------------------------------------------------------- #
 def _flatness(gray, kw):
