@@ -21,7 +21,7 @@ import os, time, hmac, json, base64, hashlib, urllib.request, urllib.error
 APP_SECRET   = os.environ.get("APP_SECRET", "dev-insecure-change-me")
 SITE_URL     = os.environ.get("SITE_URL", "https://cleanreel.app")
 RESEND_KEY   = os.environ.get("RESEND_API_KEY")
-MAIL_FROM    = os.environ.get("MAIL_FROM", "CleanReel <onboarding@resend.dev>")
+MAIL_FROM    = os.environ.get("MAIL_FROM", "CleanReel <login@cleanreel.app>")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 FREE_SIGNUP_CREDITS = int(os.environ.get("FREE_SIGNUP_CREDITS", "2"))
 
