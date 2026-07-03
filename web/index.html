@@ -85,6 +85,11 @@
   .modes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
   .modes .tool{padding:9px 14px;font-weight:600}
   .optrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  .nudge{background:linear-gradient(90deg,rgba(108,140,255,.18),rgba(154,108,255,.18));
+    border:1px solid var(--acc);border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:15px}
+  @keyframes pulseA{0%,100%{box-shadow:0 0 0 0 rgba(108,140,255,0)}50%{box-shadow:0 0 0 4px rgba(108,140,255,.6)}}
+  .pulse{animation:pulseA 1s ease-in-out 2}
+  .warn{color:#ffb4b4}
   /* ---- before/after compare ---- */
   .cmp{position:relative;border-radius:12px;overflow:hidden;background:#000;margin-top:10px;
        touch-action:none;cursor:ew-resize;user-select:none}
@@ -130,6 +135,7 @@
         <button id="signout" class="tool">Sign out</button>
       </span>
     </div>
+    <div id="signinNudge" class="nudge" style="display:none"></div>
     <div id="buyPanel" class="buypanel" style="display:none"></div>
     <div class="modes" id="modes">
       <button class="tool mode active" data-task="remove">💧 Remove watermark</button>
@@ -146,6 +152,8 @@
           <button id="up" class="btn ghost">Upload</button>
           <span id="meta" class="pill"></span>
         </div>
+        <p class="hint" id="uploadLimit">Up to 60s per video in this tier.</p>
+        <p class="hint warn" id="tooLong" style="display:none"></p>
 
         <p class="step-tag" style="margin-top:18px" id="step2Tag">Step 2 · Highlight the watermark</p>
         <p id="needUpload" class="hint">Upload a video and I'll show a frame with the watermark highlighted for you to mark.</p>
@@ -354,7 +362,7 @@ function renderAcct(){
   const inU = !!(auth&&auth.session);
   $("acctForm").style.display=inU?'none':'inline';
   $("acctUser").style.display=inU?'inline':'none';
-  if(inU) $("acctInfo").innerHTML=`Signed in as <b>${auth.email}</b> · <b>${auth.credits??'…'}</b> export credit(s)`;
+  if(inU){ $("acctInfo").innerHTML=`Signed in as <b>${auth.email}</b> · <b>${auth.credits??'…'}</b> export credit(s)`; $("signinNudge").style.display='none'; }
   else { $("acctInfo").textContent='Previews are free. Sign in to export cleaned videos.'; $("buyPanel").style.display='none'; }
 }
 async function refreshMe(){
@@ -570,7 +578,22 @@ async function doUpload(){
   } finally { uploading=false; btn.disabled=false; btn.textContent=label; }
 }
 $("up").addEventListener("click",doUpload);
-$("file").addEventListener("change",()=>{ if($("file").files[0]&&!uploading) $("meta").textContent="Ready — hit Upload."; });
+let MAXSEC=60;                           // clip-length cap; refreshed from /api/health
+fetch(API+"/api/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+  if(d&&d.max_export_seconds){ MAXSEC=d.max_export_seconds;
+    $("uploadLimit").innerHTML=`Up to <b>${MAXSEC}s</b> per video · previews are free, export cleans the whole clip.`; }
+}).catch(()=>{});
+$("file").addEventListener("change",()=>{
+  const f=$("file").files[0]; $("tooLong").style.display='none'; $("up").disabled=false;
+  if(!f||uploading) return;
+  $("meta").textContent="Ready — hit Upload.";
+  try{ const v=document.createElement('video'); v.preload='metadata';
+    v.onloadedmetadata=()=>{ const s=v.duration||0; try{URL.revokeObjectURL(v.src);}catch(e){}
+      if(s>MAXSEC+0.5){ $("tooLong").innerHTML=`⚠ That clip is ${Math.round(s)}s — the limit is <b>${MAXSEC}s</b> per video. Trim it to ${MAXSEC}s or less, then re-select.`;
+        $("tooLong").style.display='block'; $("up").disabled=true; $("meta").textContent=''; } };
+    v.src=URL.createObjectURL(f);
+  }catch(e){}
+});
 ping(20000);                             // pre-warm a sleeping server on page load
 
 async function run(kind){
@@ -600,7 +623,7 @@ async function run(kind){
       ?"Submitting — cropping around your focus point…"
       :"Submitting — smart-tracking the subject…"};
   $("prog").style.width="6%"; $("status").textContent=RUN_COPY[task]||"Submitting…";
-  $("dl").style.display="none"; $("retry").style.display="none";
+  $("dl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none";
   resetCompare();
   try{
     const r=await fetch(API+"/api/jobs",{method:"POST",
@@ -608,7 +631,13 @@ async function run(kind){
     const d=await r.json();
     if(!r.ok){
       $("prog").style.width="0";
-      if(r.status===401){ $("status").textContent="Sign in above to export."; document.getElementById('acct').scrollIntoView({behavior:'smooth'}); }
+      if(r.status===401){
+        $("status").textContent="";
+        $("signinNudge").innerHTML='🔒 <b>Sign in to export</b> — it\'s free to start and previews stay free. Enter your email below and we\'ll send you a one-tap sign-in link.';
+        $("signinNudge").style.display='block';
+        document.getElementById('acct').scrollIntoView({behavior:'smooth',block:'center'});
+        const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}
+      }
       else if(r.status===402){ $("status").textContent="Out of export credits — grab a pack below."; $("buy").click(); }
       else $("status").textContent="Error: "+(d.detail||"failed");
       return;

@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import watermark_remover as wr   # noqa: E402
 
 PREVIEW_SECONDS = 4
-MAX_EXPORT_SECONDS = 30          # MVP cap for the export tier
+MAX_EXPORT_SECONDS = 60          # single clip-length cap for this tier (upload == export)
 
 _INP = None
 def _inpainter():

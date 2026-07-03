@@ -39,7 +39,7 @@ UPLOADS = os.path.join(STORAGE, "uploads")
 os.makedirs(UPLOADS, exist_ok=True)
 
 MAX_UPLOAD_MB = 200
-MAX_UPLOAD_SECONDS = 60          # hard ceiling for uploads (MVP)
+MAX_UPLOAD_SECONDS = MAX_EXPORT_SECONDS   # aligned: if it uploads, it can be exported
 
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
@@ -181,7 +181,7 @@ async def upload(file: UploadFile = File(...)):
     seconds = round(n / max(fps, 1), 1)
     if seconds > MAX_UPLOAD_SECONDS:
         os.remove(path)
-        raise HTTPException(413, f"Video too long ({seconds}s). MVP limit is {MAX_UPLOAD_SECONDS}s.")
+        raise HTTPException(413, f"That clip is {seconds:.0f}s — the limit is {MAX_UPLOAD_SECONDS}s per video in this tier. Trim it and try again.")
     FILES[fid] = {"path": path, "w": w, "h": h, "seconds": seconds, "fps": fps}
     return {"file_id": fid, "width": w, "height": h, "seconds": seconds}
 
