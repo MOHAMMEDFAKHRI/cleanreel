@@ -642,6 +642,20 @@ def _enhance_video_neural(path, out, url, scale=1.0, preview=None, max_dim=None,
         s = max_dim / max(ow, oh)
         ow, oh = ow * s, oh * s
     ow, oh = _even(ow), _even(oh)
+    # Sizing rule — quality-neutral by construction: never feed the network
+    # FEWER pixels than the output holds (that would swap real source detail
+    # for hallucinated detail), and never more than the output can use (the
+    # encoder would just downscale the excess away — pure wasted GPU time):
+    #   * source covers the output -> pre-scale frames to the output size and
+    #     run the network as pure RESTORATION (netscale 1). The max_dim cap
+    #     already bounds what the customer receives, so nothing they get back
+    #     is degraded.
+    #   * genuine enlargement (source smaller than output) -> send the source
+    #     untouched and let the network really upscale it (netscale 2).
+    if w * h >= ow * oh:
+        sw, sh, netscale = ow, oh, 1.0
+    else:
+        sw, sh = w, h
     sess = requests.Session()
 
     def send(chunk):
@@ -675,17 +689,24 @@ def _enhance_video_neural(path, out, url, scale=1.0, preview=None, max_dim=None,
 
     print("[engine] enhance backend = modal (GPU, Real-ESRGAN"
           + ("+GFPGAN)" if face else ")"), flush=True)
+    # WR_ENHANCE_PARALLEL chunks are kept in flight at once (default 3): Modal
+    # auto-scales a container per concurrent request, so wall-clock drops ~3x
+    # at the SAME total GPU cost. Results are written strictly in submission
+    # order, so the output video is identical to the sequential path.
+    workers = max(1, int(os.environ.get("WR_ENHANCE_PARALLEL", "3")))
+    from collections import deque
+    from concurrent.futures import ThreadPoolExecutor
     tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
     enc = None
     total = limit or n
     written = 0
+    pool = ThreadPoolExecutor(max_workers=workers)
     try:
-        buf = []
-        def flush():
+        pending = deque()                             # futures, submission order
+
+        def write_chunk(res):
             nonlocal enc, written
-            if not buf:
-                return
-            for o in send(buf):
+            for o in res:
                 if enc is None:                       # dims from the first result
                     rh, rw = o.shape[:2]
                     target = (ow, oh) if (ow, oh) != (rw, rh) else None
@@ -694,19 +715,31 @@ def _enhance_video_neural(path, out, url, scale=1.0, preview=None, max_dim=None,
                 written += 1
                 if progress_cb and total and written % 5 == 0:
                     progress_cb(written, total)
-            if written % 50 < len(buf):
+            if written % 50 < len(res):
                 print(f"  frame {written}/{total or '?'}", flush=True)
-            buf.clear()
+
+        buf = []
         for f in frames_iter(path, limit):
+            if (f.shape[1], f.shape[0]) != (sw, sh):  # shrink BEFORE buffering
+                f = cv2.resize(f, (sw, sh), interpolation=cv2.INTER_AREA)
             buf.append(f)
             if len(buf) >= batch:
-                flush()
-        flush()
+                pending.append(pool.submit(send, buf)); buf = []
+                while len(pending) >= workers:        # bounded lookahead
+                    write_chunk(pending.popleft().result())
+        if buf:
+            pending.append(pool.submit(send, buf))
+        while pending:
+            write_chunk(pending.popleft().result())
         if enc is None:
             raise RuntimeError("no frames")
         enc.close(); enc = None
         mux_audio(raw, path, out)
     finally:
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
         if enc is not None:
             try:
                 enc.close()
