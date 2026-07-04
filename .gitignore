@@ -12,9 +12,10 @@ wm_layer.npz
 # private-facing ops runbook — keep local, do not publish
 RUNBOOK.md
 
-# sandbox scratch files (safe to delete) — never publish
-_sync_probe.txt
-_tail_wr.py
+# local deploy helpers (contain secrets)
+DEPLOY_MODAL.bat
+modal_deploy_log.txt
+l_wr.py
 _tail_jobs.py
 _tail_main.py
 _tail_index.txt

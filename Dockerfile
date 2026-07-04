@@ -8,40 +8,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libglib2
 
 WORKDIR /app
 
-# Install deps first (better layer caching).
-# Pinned CPU torch + torchvision (matched pair, py3.12 wheels on the CPU index).
-# Two reasons for the pin:
-#  1) simple-lama-inpainting REQUIRES torchvision (>=0.14.1); pulling it from the
-#     default PyPI index (via requirements.txt) mismatches torch and crashes on
-#     `import torchvision`.
-#  2) The big-lama TorchScript model (2022) dispatches an op to the CUDA backend
-#     on very new torch builds -> "aten::empty_strided ... CUDA backend" on a
-#     CPU-only box (simple-lama issue #9). 2.2.2 / 0.17.2 run big-lama on CPU.
-RUN pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
+# Install deps first (better layer caching). Light build — NO torch here. The
+# neural inpaint (LaMa) runs off-box on the Modal GPU service (see gpu/modal_app.py);
+# this image only needs the classical fallback + the thin HTTPS client (requests).
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
-
-# ---- LaMa weights baked in at BUILD time so runtime never downloads ----------
-# Download big-lama.pt (~196 MB) directly with urllib — no torch import in this
-# step, so a torch/torchvision problem can't be confused with a download problem.
-# TORCH_HOME is an ENV (not RUN-local) so runtime resolves the same cache dir;
-# LAMA_MODEL then points the package straight at the file (no runtime fetch).
-ENV TORCH_HOME=/app/.cache/torch
-RUN mkdir -p /app/.cache/torch/hub/checkpoints \
- && python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt','/app/.cache/torch/hub/checkpoints/big-lama.pt')" \
- && test -s /app/.cache/torch/hub/checkpoints/big-lama.pt \
- && python -c "import torch, torchvision, simple_lama_inpainting; print('[build] LaMa import OK', torch.__version__, torchvision.__version__)"
-# Point the package's own LAMA_MODEL env var straight at the baked file so the
-# runtime never attempts a network download (and a missing file fails loudly).
-ENV LAMA_MODEL=/app/.cache/torch/hub/checkpoints/big-lama.pt
-# ------------------------------------------------------------------------------
 
 # App code
 COPY watermark_remover.py /app/watermark_remover.py
 COPY backend /app/backend
 
-# Neural (LaMa) ships in the image but stays OFF until you set WR_ENGINE=auto on a
-# 2 GB+ instance. Default 'classical' is memory-safe on any tier.
+# Inpaint backend selection (watermark_remover.Inpainter):
+#   * Set WR_INPAINT_URL (+ WR_INPAINT_TOKEN) -> neural LaMa on the Modal GPU.
+#   * Otherwise this 'classical' default keeps the fast OpenCV fallback on-box.
 ENV WR_ENGINE=classical
 # Set your real domain so robots/sitemap/SEO are correct:
 # ENV SITE_URL=https://your-domain.com

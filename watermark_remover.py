@@ -66,18 +66,30 @@ def ffmpeg_bin():
 # Inpainting backend
 # --------------------------------------------------------------------------- #
 class Inpainter:
-    """LaMa if available, else OpenCV. mask01: uint8 {0,1}, 1 = remove."""
+    """Neural inpaint on a remote GPU (Modal) when WR_INPAINT_URL is set; else local
+    LaMa if the deps are present; else OpenCV classical. Every path takes a BGR crop
+    and mask01 (uint8 {0,1}, 1 = remove) and returns a BGR crop — so process_video,
+    autotune and QC don't care which backend is live. If the remote GPU errors on a
+    crop we quietly do that one crop classically, so a blip never kills a render."""
     def __init__(self, engine="auto"):
         self.kind = "classical"
         self.lama = None
+        self.remote = None
+        url = os.environ.get("WR_INPAINT_URL", "").strip()
+        if url:
+            import requests                      # only needed in remote mode
+            self.remote = url
+            self.remote_token = os.environ.get("WR_INPAINT_TOKEN", "")
+            self.timeout = float(os.environ.get("WR_INPAINT_TIMEOUT", "60"))
+            self._sess = requests.Session()
+            self.kind = "modal"
+            print("[engine] inpainting backend = modal (GPU)", flush=True)
+            return
         if engine in ("auto", "lama"):
             try:
                 from simple_lama_inpainting import SimpleLama
                 import torch as _torch
                 self._Image = __import__("PIL.Image", fromlist=["Image"])
-                # Force CPU explicitly. Render has no GPU; letting SimpleLama
-                # default to CUDA (or picking up a CUDA-built torch) triggers
-                # "aten::empty_strided ... CUDA backend" on this box.
                 self.lama = SimpleLama(device=_torch.device("cpu"))
                 self.kind = "lama"
             except Exception as e:
@@ -90,17 +102,54 @@ class Inpainter:
                       flush=True)
         print(f"[engine] inpainting backend = {self.kind}", flush=True)
 
+    def _classical(self, bgr, mask01):
+        return cv2.inpaint(bgr, (mask01 * 255).astype(np.uint8), 4, cv2.INPAINT_TELEA)
+
+    def _remote(self, bgr, mask01):
+        """One ROI crop -> Modal GPU LaMa -> inpainted crop. Retries once."""
+        import base64
+        oki, ib = cv2.imencode(".png", bgr)
+        okm, mb = cv2.imencode(".png", (mask01 * 255).astype(np.uint8))
+        if not (oki and okm):
+            raise RuntimeError("crop encode failed")
+        body = {"token": self.remote_token,
+                "items": [{"image": base64.b64encode(ib).decode(),
+                           "mask": base64.b64encode(mb).decode()}]}
+        last = None
+        for _ in range(2):
+            try:
+                r = self._sess.post(self.remote, json=body, timeout=self.timeout)
+                r.raise_for_status()
+                arr = np.frombuffer(base64.b64decode(r.json()["results"][0]), np.uint8)
+                out = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if out is None:
+                    raise RuntimeError("bad result png")
+                if out.shape[:2] != bgr.shape[:2]:
+                    out = cv2.resize(out, (bgr.shape[1], bgr.shape[0]))
+                return out
+            except Exception as e:
+                last = e
+        raise last
+
     def inpaint(self, bgr, mask01):
         if mask01.max() == 0:
             return bgr
+        if self.kind == "modal":
+            try:
+                return self._remote(bgr, mask01)
+            except Exception as e:
+                if not getattr(self, "_warned", False):
+                    print(f"[modal] inpaint failed ({e!r}); using classical for "
+                          f"affected crops", flush=True)
+                    self._warned = True
+                return self._classical(bgr, mask01)
         if self.kind == "lama":
             Image = self._Image
             rgb = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
             m = Image.fromarray((mask01 * 255).astype(np.uint8))
             res = np.array(self.lama(rgb, m))
             return cv2.cvtColor(res, cv2.COLOR_RGB2BGR)
-        # classical fallback
-        return cv2.inpaint(bgr, (mask01 * 255).astype(np.uint8), 4, cv2.INPAINT_TELEA)
+        return self._classical(bgr, mask01)
 
 
 # --------------------------------------------------------------------------- #

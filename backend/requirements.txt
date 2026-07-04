@@ -1,4 +1,5 @@
-# Backend API — light build that runs on a free 512MB tier (classical engine).
+# Backend API — light build (classical inpaint locally; neural LaMa runs off-box on
+# the Modal GPU service, so no torch here). Runs comfortably on a small tier.
 fastapi
 uvicorn[standard]
 python-multipart
@@ -7,8 +8,9 @@ numpy
 imageio-ffmpeg
 stripe                      # credit-pack checkout + webhooks
 psycopg[binary]             # Neon Postgres (accounts + credit balances)
+requests                    # calls the Modal GPU inpaint service (WR_INPAINT_URL)
 
-# Neural LaMa (best quality). Ships in the image; used only when WR_ENGINE=auto on a
-# 2 GB+ instance. torch (CPU) is installed separately in the Dockerfile.
-simple-lama-inpainting
-pillow
+# Neural LaMa now runs on the Modal GPU microservice (gpu/modal_app.py), NOT here.
+# The local `simple-lama-inpainting` path still exists in watermark_remover.py as a
+# fallback for anyone running with a local GPU, but it's intentionally NOT installed
+# on Render (it pulls ~1.5 GB of torch and can't use the CPU-only box anyway).
