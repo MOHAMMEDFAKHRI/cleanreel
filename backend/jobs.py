@@ -211,9 +211,14 @@ class JobManager:
         if task == "enhance":
             scale = float(params.get("scale", 1.0) or 1.0)
             job.progress = 0.15
-            job.message = ("Enhancing — denoise, 2× upscale, halo-safe sharpen..."
-                           if scale >= 1.5 else
-                           "Enhancing — denoise + halo-safe sharpen...")
+            if os.environ.get("WR_ENHANCE_URL", "").strip():
+                job.message = ("Enhancing — neural restore + 2× upscale (Real-ESRGAN)..."
+                               if scale >= 1.5 else
+                               "Enhancing — neural restore (Real-ESRGAN)...")
+            else:
+                job.message = ("Enhancing — denoise, 2× upscale, halo-safe sharpen..."
+                               if scale >= 1.5 else
+                               "Enhancing — denoise + halo-safe sharpen...")
             # Own output cap: 2x of a large source would blow the memory budget.
             # WR_ENHANCE_MAX = max OUTPUT long side for enhance (default 1600).
             max_out = int(os.environ.get("WR_ENHANCE_MAX", "1600"))

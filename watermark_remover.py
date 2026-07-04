@@ -620,16 +620,123 @@ def _even(v):
     return max(2, v - (v & 1))
 
 
+def _enhance_video_neural(path, out, url, scale=1.0, preview=None, max_dim=None,
+                          progress_cb=None):
+    """TRUE neural enhance on the Modal GPU: Real-ESRGAN restore/upscale, with
+    optional GFPGAN face restore (WR_ENHANCE_FACE, default on). Frames travel
+    in chunks of WR_ENHANCE_BATCH as JPEG-95; the Encoder does the final fit to
+    max_dim with its ffmpeg filters OFF (the network already restored detail —
+    re-sharpening would halo it). Raises on any failure so enhance_video can
+    fall back to the classical chain. Audio is preserved via mux_audio."""
+    import base64
+    import requests
+    token = os.environ.get("WR_INPAINT_TOKEN", "")
+    batch = max(1, int(os.environ.get("WR_ENHANCE_BATCH", "6")))
+    timeout = float(os.environ.get("WR_ENHANCE_TIMEOUT", "300"))
+    face = os.environ.get("WR_ENHANCE_FACE", "1").lower() not in ("0", "false", "")
+    netscale = 2.0 if float(scale) >= 1.5 else 1.0
+    w, h, fps, n = probe(path)
+    limit = int(preview * fps) if preview else None
+    ow, oh = w * float(scale), h * float(scale)      # requested output size
+    if max_dim and max(ow, oh) > max_dim:
+        s = max_dim / max(ow, oh)
+        ow, oh = ow * s, oh * s
+    ow, oh = _even(ow), _even(oh)
+    sess = requests.Session()
+
+    def send(chunk):
+        items = []
+        for f in chunk:
+            ok, jb = cv2.imencode(".jpg", f, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+            if not ok:
+                raise RuntimeError("frame encode failed")
+            items.append({"image": base64.b64encode(jb).decode()})
+        body = {"token": token, "scale": netscale, "face_enhance": face,
+                "items": items}
+        last = None
+        for _ in range(2):                            # one retry, like inpaint
+            try:
+                r = sess.post(url, json=body, timeout=timeout)
+                r.raise_for_status()
+                outs = r.json()["results"]
+                if len(outs) != len(chunk):
+                    raise RuntimeError("result count mismatch")
+                res = []
+                for b64 in outs:
+                    o = cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8),
+                                     cv2.IMREAD_COLOR)
+                    if o is None:
+                        raise RuntimeError("bad result frame")
+                    res.append(o)
+                return res
+            except Exception as e:
+                last = e
+        raise last
+
+    print("[engine] enhance backend = modal (GPU, Real-ESRGAN"
+          + ("+GFPGAN)" if face else ")"), flush=True)
+    tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
+    enc = None
+    total = limit or n
+    written = 0
+    try:
+        buf = []
+        def flush():
+            nonlocal enc, written
+            if not buf:
+                return
+            for o in send(buf):
+                if enc is None:                       # dims from the first result
+                    rh, rw = o.shape[:2]
+                    target = (ow, oh) if (ow, oh) != (rw, rh) else None
+                    enc = Encoder(rw, rh, fps, raw, upscale=target, sharpen=False)
+                enc.write(o)
+                written += 1
+                if progress_cb and total and written % 5 == 0:
+                    progress_cb(written, total)
+            if written % 50 < len(buf):
+                print(f"  frame {written}/{total or '?'}", flush=True)
+            buf.clear()
+        for f in frames_iter(path, limit):
+            buf.append(f)
+            if len(buf) >= batch:
+                flush()
+        flush()
+        if enc is None:
+            raise RuntimeError("no frames")
+        enc.close(); enc = None
+        mux_audio(raw, path, out)
+    finally:
+        if enc is not None:
+            try:
+                enc.close()
+            except Exception:
+                pass
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"done -> {out}")
+
+
 def enhance_video(path, out, scale=1.0, denoise=True, sharpen=0.6, deblock=None,
                   preview=None, max_dim=None, progress_cb=None):
-    """Quality pass through the Encoder's ffmpeg chain: optional lanczos upscale,
-    temporal denoise (hqdn3d), deblocking, and adaptive sharpening (cas+unsharp).
-    No mask, no inpainting; audio is preserved.
+    """ENHANCE entry point. When WR_ENHANCE_URL is set, runs TRUE neural
+    enhance (Real-ESRGAN + optional GFPGAN on the Modal GPU); on any failure —
+    or with the var unset — falls back to the classical ffmpeg chain below
+    (lanczos upscale, hqdn3d denoise, deblock, halo-guarded cas+unsharp), so
+    an enhance job never hard-fails.
       scale     output scale factor (1.0 or 2.0 from the UI)
-      sharpen   0..1 strength (0 = off)
-      deblock   None -> follow `denoise`
+      sharpen   0..1 strength (0 = off; classical chain only)
+      deblock   None -> follow `denoise`  (classical chain only)
       max_dim   cap on the OUTPUT long side (memory guard; None = uncapped)
     """
+    url = os.environ.get("WR_ENHANCE_URL", "").strip()
+    if url:
+        try:
+            return _enhance_video_neural(path, out, url, scale=scale,
+                                         preview=preview, max_dim=max_dim,
+                                         progress_cb=progress_cb)
+        except Exception as e:
+            print(f"[modal] enhance failed ({e!r}); falling back to the "
+                  "classical chain", flush=True)
     w, h, fps, n = probe(path)
     limit = int(preview * fps) if preview else None
     if deblock is None:
