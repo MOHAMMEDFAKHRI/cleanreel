@@ -105,8 +105,10 @@ def current_user(authorization: str | None) -> str | None:
     return accounts.verify_token(authorization.split(" ", 1)[1], "session")
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health():
+    # HEAD is allowed too: uptime monitors (UptimeRobot, etc.) probe with HEAD by
+    # default — a GET-only route answers 405 and they wrongly flag the API "down".
     return {"ok": True, "preview_seconds": PREVIEW_SECONDS,
             "max_export_seconds": MAX_EXPORT_SECONDS}
 
