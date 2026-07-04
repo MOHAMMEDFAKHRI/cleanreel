@@ -9,25 +9,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libglib2
 WORKDIR /app
 
 # Install deps first (better layer caching).
-# CPU-only torch (much smaller than the default CUDA build) so LaMa fits a 2 GB box.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# CPU-only torch + torchvision, matched versions from the SAME index.
+# simple-lama-inpainting REQUIRES torchvision (>=0.14.1); if it's pulled from the
+# default PyPI index (via requirements.txt) instead, its build mismatches this
+# CPU torch and `import torchvision` crashes -> LaMa was silently falling back.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# ---- LaMa weights: baked in at BUILD time so runtime never downloads --------
-# simple-lama-inpainting fetches big-lama.pt (~200 MB) from GitHub releases the
-# first time SimpleLama() is constructed, caching it under
-# <torch hub dir>/checkpoints (torch hub dir = $TORCH_HOME/hub). At runtime on
-# Render that download silently failed, so LaMa fell back to classical.
-# TORCH_HOME must be an ENV (not RUN-local) so the runtime process resolves the
-# same cache dir the build wrote to.
+# ---- LaMa weights baked in at BUILD time so runtime never downloads ----------
+# Download big-lama.pt (~196 MB) directly with urllib — no torch import in this
+# step, so a torch/torchvision problem can't be confused with a download problem.
+# TORCH_HOME is an ENV (not RUN-local) so runtime resolves the same cache dir;
+# LAMA_MODEL then points the package straight at the file (no runtime fetch).
 ENV TORCH_HOME=/app/.cache/torch
-RUN python -c "from simple_lama_inpainting import SimpleLama; SimpleLama()" \
-    && test -f /app/.cache/torch/hub/checkpoints/big-lama.pt
-# Point the package's own LAMA_MODEL env var straight at the baked file: runtime
-# then never attempts a network download and a missing file fails loudly.
-# (Must be set AFTER the pre-warm RUN above — if set before, SimpleLama() would
-# raise FileNotFoundError at build instead of downloading.)
+RUN mkdir -p /app/.cache/torch/hub/checkpoints \
+ && python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt','/app/.cache/torch/hub/checkpoints/big-lama.pt')" \
+ && test -s /app/.cache/torch/hub/checkpoints/big-lama.pt \
+ && python -c "import torch, torchvision, simple_lama_inpainting; print('[build] LaMa import OK', torch.__version__, torchvision.__version__)"
+# Point the package's own LAMA_MODEL env var straight at the baked file so the
+# runtime never attempts a network download (and a missing file fails loudly).
 ENV LAMA_MODEL=/app/.cache/torch/hub/checkpoints/big-lama.pt
 # ------------------------------------------------------------------------------
 
