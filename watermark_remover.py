@@ -80,6 +80,10 @@ class Inpainter:
                 if engine == "lama":
                     sys.exit(f"LaMa requested but unavailable: {e}\n"
                              "pip install simple-lama-inpainting pillow torch")
+                # engine == "auto": don't swallow the reason — surface WHY LaMa
+                # failed to load before silently falling back to classical.
+                print(f"[engine] LaMa unavailable, falling back to classical: {e!r}",
+                      flush=True)
         print(f"[engine] inpainting backend = {self.kind}", flush=True)
 
     def inpaint(self, bgr, mask01):
