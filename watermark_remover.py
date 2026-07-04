@@ -165,9 +165,15 @@ class Encoder:
         self.p.stdin.close(); self.p.wait()
 
 def mux_audio(video_only, src, out):
+    # -shortest caps the output at the video's length: previews render only the
+    # first N seconds of video, and without it the COPIED audio track kept the
+    # source's full duration — a 4 s free preview came back as a "20 s" file
+    # (frozen last frame + the entire audio). Full exports are unaffected
+    # (video and audio already have ~equal length).
     r = subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", video_only,
                         "-i", src, "-map", "0:v:0", "-map", "1:a:0?",
-                        "-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart", out])
+                        "-c:v", "copy", "-c:a", "copy", "-shortest",
+                        "-movflags", "+faststart", out])
     if r.returncode != 0:
         shutil.copy(video_only, out)
 
@@ -991,18 +997,12 @@ def blur_video(path, out, targets=("face",), style="blur", strength=0.6,
                            style, strength)
         if man_mask is not None:
             if trk is not None:
-                # moving manual region: template-match it in this frame
-                g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-                res = cv2.matchTemplate(g, trk["template"], cv2.TM_CCOEFF_NORMED)
-                _, _, _, loc = cv2.minMaxLoc(res)
-                mr = trk["mask_roi"]; th_, tw_ = mr.shape
-                nx, ny = int(loc[0]), int(loc[1])
-                y0, x0 = max(0, ny), max(0, nx)
-                y1, x1 = min(h, ny + th_), min(w, nx + tw_)
-                if y1 > y0 and x1 > x0:
-                    eff = np.zeros((h, w), np.uint8)
-                    eff[y0:y1, x0:x1] = mr[y0 - ny:y1 - ny, x0 - nx:x1 - nx]
-                    _obscure_masked(f, eff, style, strength, rect=(x0, y0, x1, y1))
+                # moving manual region: tracked (multi-scale, gated). Privacy
+                # fails CLOSED — when the tracker loses the region it keeps
+                # obscuring the last confident spot instead of exposing it.
+                eff, rect = _track_mask(trk, f, on_lost="hold")
+                if eff is not None:
+                    _obscure_masked(f, eff, style, strength, rect=rect)
             else:
                 _obscure_masked(f, man_mask, style, strength, rect=man_rect)
         enc.write(f)
@@ -1062,17 +1062,10 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
             f = np.clip(O - gain * B * r, 0, 255).astype(np.uint8)
         # (2) build this frame's mask
         if track is not None:
-            # MOVING / ANIMATED mark: follow it by template-matching each frame.
-            g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-            res = cv2.matchTemplate(g, track["template"], cv2.TM_CCOEFF_NORMED)
-            _, _, _, loc = cv2.minMaxLoc(res)
-            mr = track["mask_roi"]; th, tw = mr.shape
-            nx, ny = int(loc[0]), int(loc[1])
-            eff = np.zeros((h, w), np.uint8)
-            y0, x0 = max(0, ny), max(0, nx); y1, x1 = min(h, ny + th), min(w, nx + tw)
-            if y1 > y0 and x1 > x0:
-                eff[y0:y1, x0:x1] = mr[y0 - ny:y1 - ny, x0 - nx:x1 - nx]
-            eff = cv2.dilate(eff, np.ones((5, 5), np.uint8))
+            # MOVING / ANIMATED mark: follow it (multi-scale, gated — see the
+            # tracking section). eff=None when the tracker has no trustworthy
+            # location: the frame is left untouched rather than damaged.
+            eff, _rect = _track_mask(track, f, on_lost="skip")
         else:
             # STATIC mark: gate to locally-flat pixels so the moving subject
             # (face/hands/clothes detail) is left untouched.
@@ -1235,12 +1228,75 @@ def detect_image(path):  # noqa: E302  (QC section above)
     return cv2.dilate(cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)),
                       np.ones((3, 3), np.uint8))
 
+# --------------------------------------------------------------------------- #
+# Moving-mark tracking (erase / blur "Moving object")
+#
+# v2 tracker: the old loop matched ONE fixed-size gray template per frame and
+# ALWAYS inpainted wherever the global NCC peak landed. On a handheld object
+# that tilts/zooms (a product box near a face), the peak stays deceptively
+# high (0.7+) at the WRONG place once the pose drifts — measured on a real
+# clip it hit the true region on only ~6% of frames while confidently
+# inpainting other content. v2 fixes the two failure modes separately:
+#   * finding: multi-scale matching, a local search window around the last
+#     confirmed position (continuity), and a strict global re-acquire after a
+#     loss (small-context scan verified by the big-context template);
+#   * trusting: every candidate must pass an edge-energy veto (flat walls
+#     can't win), a structure "leash" vs. the reference template, and a
+#     dominant-hue color gate derived from the marked patch — if a frame has
+#     no trustworthy location the tracker ABSTAINS (erase leaves the frame
+#     untouched; blur holds the last spot) instead of damaging other content.
+# WR_TRACK_V2=0 restores the legacy behavior; WR_TRACK_PAD tunes how much the
+# tracked mask is grown (fraction of its size) so small drift still covers.
+# --------------------------------------------------------------------------- #
+def _blurf(g):
+    return cv2.GaussianBlur(g.astype(np.float32), (0, 0), 1.5)
+
+def _sobf(g):
+    g = g.astype(np.float32)
+    return cv2.magnitude(cv2.Sobel(g, cv2.CV_32F, 1, 0, 3),
+                         cv2.Sobel(g, cv2.CV_32F, 0, 1, 3))
+
+def _nccs(a, b):
+    """Plain NCC of two equal-size float patches (no sliding)."""
+    a = a - a.mean(); b = b - b.mean()
+    d = float(np.sqrt((a * a).sum() * (b * b).sum()))
+    return float((a * b).sum() / d) if d > 1e-6 else 0.0
+
+def _hue_sig(bgr):
+    """Dominant-hue signature of a patch: (hue_lo, frac) — the modal hue window
+    (±12°, wrapping) among saturated pixels and how much of the patch it covers.
+    None when the patch is too gray to color-gate on."""
+    if bgr.size < 48:
+        return None
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    H = hsv[..., 0].astype(np.int32); S = hsv[..., 1]
+    sel = S >= 30
+    if sel.mean() < 0.05:
+        return None
+    hist = np.bincount(H[sel].ravel(), minlength=180).astype(np.float32)
+    ext = np.concatenate([hist[-12:], hist, hist[:12]])
+    sm = np.convolve(ext, np.ones(25, np.float32), mode="valid")
+    lo = (int(np.argmax(sm)) - 12) % 180
+    frac = float((((H - lo) % 180) <= 24)[sel].mean() * sel.mean())
+    return (lo, frac)
+
+def _hue_frac(bgr, lo):
+    """Fraction of a patch's pixels that are saturated AND inside the ±12° hue
+    window starting at `lo` (the signature window from _hue_sig)."""
+    if bgr.size < 48:
+        return 0.0
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    H = hsv[..., 0].astype(np.int32); S = hsv[..., 1]
+    return float(((S >= 30) & (((H - lo) % 180) <= 24)).mean())
+
+
 def _track_setup(path, boxes=None, ref=None, mask01=None):
     """Template + mask_roi for a MOVING mark/object (--track / tracked erase).
     Either boxes[0] gives the region, or a painted mask01 does — then the box is
     its bounding rect and mask_roi keeps the painted shape, so only what the
     user brushed is inpainted as it moves. ref = reference time in seconds
-    (default: middle of the clip)."""
+    (default: middle of the clip). Besides the legacy template/mask_roi keys,
+    the dict carries the v2 tracker state (see the section comment above)."""
     w, h, fps, n = probe(path)
     roi = None
     if boxes:
@@ -1261,7 +1317,241 @@ def _track_setup(path, boxes=None, ref=None, mask01=None):
     g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
     if roi is None:
         roi = np.ones((bh, bw), np.uint8)
-    return dict(template=g[y:y + bh, x:x + bw].copy(), mask_roi=roi[:bh, :bw])
+    trk = dict(template=g[y:y + bh, x:x + bw].copy(), mask_roi=roi[:bh, :bw])
+    if os.environ.get("WR_TRACK_V2", "1") == "0":
+        return trk                                   # legacy tracker requested
+    # ---- v2 state: context templates around the mark + gates ----
+    ex, ey = int(round(bw * 0.50)), int(round(bh * 1.8))     # BIG context (precise)
+    cx0, cy0 = max(0, x - ex), max(0, y - ey)
+    cx1, cy1 = min(w, x + bw + ex), min(h, y + bh + ey)
+    T0b = _blurf(g)[cy0:cy1, cx0:cx1].copy()
+    T0s = _sobf(g)[cy0:cy1, cx0:cx1].copy()
+    exs, eys = int(round(bw * 0.35)), int(round(bh * 0.9))   # SMALL context (re-acquire)
+    sx0, sy0 = max(0, x - exs), max(0, y - eys)
+    sx1, sy1 = min(w, x + bw + exs), min(h, y + bh + eys)
+    T1s = _sobf(g)[sy0:sy1, sx0:sx1].copy()
+    df = max(1, int(round(max(w, h) / 640.0)))               # re-acquire scan res
+    T1s_p = (cv2.resize(T1s, (max(8, (sx1 - sx0) // df), max(6, (sy1 - sy0) // df)),
+                        interpolation=cv2.INTER_AREA) if df > 1 else T1s)
+    sig = _hue_sig(f[y:y + bh, x:x + bw])
+    if sig is not None and sig[1] < 0.35:
+        sig = None                                   # not colorful enough to gate on
+    trk.update(v2=True, W=w, H=h, fps=fps, df=df, box=(x, y, bw, bh),
+               off=(x - cx0, y - cy0), T0b=T0b, T0s=T0s, T1s_p=T1s_p,
+               off1=(x - sx0, y - sy0), s1shape=(sy1 - sy0, sx1 - sx0),
+               E0=float(np.sqrt((T0s ** 2).mean())), sig=sig,
+               cx=(cx0 + cx1) / 2.0, cy=(cy0 + cy1) / 2.0, s=1.0, miss=0,
+               hold=max(6, int(round(fps * 0.75))), seen=False,
+               keep=0.50, reacq=0.50, leash=0.15)
+    return trk
+
+
+def _track_user_box(trk, cx, cy, s):
+    """Map the tracked BIG-context center/scale back to the USER's box."""
+    bt_h, bt_w = trk["T0b"].shape
+    x, y, bw, bh = trk["box"]
+    return ((cx - bt_w * s / 2.0) + trk["off"][0] * s,
+            (cy - bt_h * s / 2.0) + trk["off"][1] * s, bw * s, bh * s)
+
+
+def _track_col_ok(trk, frame, ub):
+    """Color gate: the candidate user-box must keep a sane share of the marked
+    patch's dominant hue. Always passes for gray/colorless marks."""
+    if trk["sig"] is None:
+        return True
+    x, y, w, h = [int(round(v)) for v in ub]
+    x0, y0 = max(0, x), max(0, y)
+    roi = frame[y0:y0 + max(2, h), x0:x0 + max(2, w)]
+    if roi.size < 48:
+        return False
+    return _hue_frac(roi, trk["sig"][0]) >= max(0.10, 0.15 * trk["sig"][1])
+
+
+def _track_locate(trk, frame):
+    """v2 per-frame locator -> (x, y, w, h, score, active) for the USER box.
+    active=0 means the tracker has no trustworthy location this frame."""
+    W, H, df = trk["W"], trk["H"], trk["df"]
+    T0b, T0s = trk["T0b"], trk["T0s"]
+    bt_h, bt_w = T0b.shape
+    fg = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    best = None
+    if trk["seen"]:                                  # local search (continuity)
+        gb = _blurf(fg)
+        s = trk["s"]; tw, th = bt_w * s, bt_h * s
+        rad = max(24, 0.7 * max(tw, th)) * (1 + 0.5 * min(trk["miss"], 6))
+        wx0, wy0 = int(max(0, trk["cx"] - tw / 2 - rad)), int(max(0, trk["cy"] - th / 2 - rad))
+        wx1, wy1 = int(min(W, trk["cx"] + tw / 2 + rad)), int(min(H, trk["cy"] + th / 2 + rad))
+        win = gb[wy0:wy1, wx0:wx1]
+        if win.shape[0] >= 12 and win.shape[1] >= 14:
+            for sm in (0.94, 1.0, 1.06):             # multi-scale (zoom happens)
+                ss = float(np.clip(s * sm, 0.15, 4.0))
+                tws, ths = int(round(bt_w * ss)), int(round(bt_h * ss))
+                if tws < 10 or ths < 7 or tws >= win.shape[1] or ths >= win.shape[0]:
+                    continue
+                t = cv2.resize(T0b, (tws, ths), interpolation=cv2.INTER_AREA)
+                r = cv2.matchTemplate(win, t, cv2.TM_CCOEFF_NORMED)
+                _, mx, _, loc = cv2.minMaxLoc(r)
+                if best is None or mx > best[0]:
+                    best = (float(mx), wx0 + loc[0], wy0 + loc[1], tws, ths, ss)
+    Sg = None
+    def _gate(cand):
+        nonlocal Sg
+        sc, px, py, tws, ths, ss = cand
+        if Sg is None:
+            Sg = _sobf(fg)
+        crop = Sg[max(0, py):py + ths, max(0, px):px + tws]
+        if crop.size == 0:
+            return False
+        if float(np.sqrt((crop ** 2).mean())) < 0.20 * trk["E0"] * min(1.0, ss):
+            return False                             # edge veto: flat can't win
+        t = cv2.resize(T0s, (crop.shape[1], crop.shape[0]), interpolation=cv2.INTER_AREA)
+        if _nccs(crop, t) < trk["leash"]:
+            return False                             # structure leash vs reference
+        return _track_col_ok(trk, frame, _track_user_box(trk, px + tws / 2.0,
+                                                         py + ths / 2.0, ss))
+    good = best is not None and best[0] >= trk["keep"] and _gate(best)
+    if not good:                                     # global re-acquire (strict)
+        smallg = (cv2.resize(fg, (W // df, H // df), interpolation=cv2.INTER_AREA)
+                  if df > 1 else fg)
+        Ssp = _sobf(smallg); ra = None
+        s1h, s1w = trk["s1shape"]
+        for s in (0.25, 0.32, 0.4, 0.5, 0.63, 0.8, 1.0, 1.2, 1.45):
+            tws, ths = int(round(s1w * s / df)), int(round(s1h * s / df))
+            if tws < 10 or ths < 7 or tws >= Ssp.shape[1] or ths >= Ssp.shape[0]:
+                continue
+            t = cv2.resize(trk["T1s_p"], (tws, ths), interpolation=cv2.INTER_AREA)
+            r = cv2.matchTemplate(Ssp, t, cv2.TM_CCOEFF_NORMED)
+            _, mx, _, loc = cv2.minMaxLoc(r)
+            if ra is None or mx > ra[0]:
+                ra = (float(mx), loc[0] * df, loc[1] * df, s)
+        if ra is not None and ra[0] >= trk["reacq"]:
+            sc1, px1, py1, s = ra                    # small-ctx hit -> big-ctx box
+            ux, uy = px1 + trk["off1"][0] * s, py1 + trk["off1"][1] * s
+            cand = (sc1, int(round(ux - trk["off"][0] * s)),
+                    int(round(uy - trk["off"][1] * s)),
+                    int(round(bt_w * s)), int(round(bt_h * s)), s)
+            if Sg is None:
+                Sg = _sobf(fg)
+            crop = Sg[max(0, cand[2]):cand[2] + cand[4], max(0, cand[1]):cand[1] + cand[3]]
+            vok = (crop.size > 0 and crop.shape[0] >= 6 and crop.shape[1] >= 8 and
+                   _nccs(crop, cv2.resize(T0s, (crop.shape[1], crop.shape[0]),
+                                          interpolation=cv2.INTER_AREA)) >= 0.28)
+            if vok and _gate(cand):
+                best, good = cand, True
+    if good:
+        sc, px, py, tws, ths, ss = best
+        trk["cx"], trk["cy"] = px + tws / 2.0, py + ths / 2.0
+        trk["s"] = 0.85 * trk["s"] + 0.15 * ss if trk["seen"] else ss
+        trk["miss"] = 0; trk["seen"] = True
+        return _track_user_box(trk, trk["cx"], trk["cy"], trk["s"]) + (sc, 1)
+    trk["miss"] += 1
+    ub = _track_user_box(trk, trk["cx"], trk["cy"], trk["s"])
+    active = 1 if (trk["seen"] and trk["miss"] <= trk["hold"]
+                   and _track_col_ok(trk, frame, ub)) else 0
+    return ub + (0.0, active)
+
+
+def _track_mask(trk, frame, on_lost="skip"):
+    """Per-frame effective mask for a tracked mark -> (mask01 or None, rect).
+    v2: locate + scale the painted mask_roi to the tracked size, grow it by
+    WR_TRACK_PAD (default 11%) so small drift still covers the mark. When the
+    tracker abstains: erase SKIPS the frame (inpainting a guessed spot damages
+    other content), blur HOLDS the last confident spot (privacy fails closed).
+    Legacy (WR_TRACK_V2=0): the original single-scale argmax behavior."""
+    h, w = frame.shape[:2]
+    mr = trk["mask_roi"]
+    if not trk.get("v2"):
+        g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        res = cv2.matchTemplate(g, trk["template"], cv2.TM_CCOEFF_NORMED)
+        _, _, _, loc = cv2.minMaxLoc(res)
+        th_, tw_ = mr.shape
+        nx, ny = int(loc[0]), int(loc[1])
+        y0, x0 = max(0, ny), max(0, nx)
+        y1, x1 = min(h, ny + th_), min(w, nx + tw_)
+        if y1 <= y0 or x1 <= x0:
+            return None, None
+        eff = np.zeros((h, w), np.uint8)
+        eff[y0:y1, x0:x1] = mr[y0 - ny:y1 - ny, x0 - nx:x1 - nx]
+        eff = cv2.dilate(eff, np.ones((5, 5), np.uint8))
+        return eff, (x0, y0, x1, y1)
+    x, y, bw, bh, score, active = _track_locate(trk, frame)
+    if not active:
+        if on_lost != "hold" or not trk["seen"]:
+            return None, None                        # abstain: do no harm
+    bw_i, bh_i = max(2, int(round(bw))), max(2, int(round(bh)))
+    nx, ny = int(round(x)), int(round(y))
+    roi = cv2.resize(mr, (bw_i, bh_i), interpolation=cv2.INTER_NEAREST)
+    pad = max(2, int(round(float(os.environ.get("WR_TRACK_PAD", "0.11"))
+                           * max(bw_i, bh_i))))
+    k = 2 * pad + 1
+    # grow the CANVAS first, then dilate — dilating alone can't enlarge an
+    # all-ones box mask, it would only end up shifted by the pad offset.
+    roi = cv2.copyMakeBorder(roi, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
+    roi = cv2.dilate(roi, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    ny -= pad; nx -= pad                             # padding grew the roi
+    th_, tw_ = roi.shape
+    y0, x0 = max(0, ny), max(0, nx)
+    y1, x1 = min(h, ny + th_), min(w, nx + tw_)
+    if y1 <= y0 or x1 <= x0:
+        return None, None
+    eff = np.zeros((h, w), np.uint8)
+    eff[y0:y1, x0:x1] = roi[y0 - ny:y1 - ny, x0 - nx:x1 - nx]
+    return eff, (x0, y0, x1, y1)
+
+
+def marked_region_motion(path, mask01, ref=None, limit=None, k=7):
+    """Does the marked content MOVE across the clip? Cheap probe for the erase
+    path: sample k frames over the first `limit` frames and test whether the
+    reference patch is still at (about) its original spot — an NCC 'stay'
+    score robust to ±8 px of handheld camera wobble, plus a dominant-hue
+    'color stay'. Returns (moving, stats). Colorless marks only flip on a
+    clear appearance collapse, so a static logo never gets hijacked."""
+    m = (np.asarray(mask01) > 0).astype(np.uint8)
+    if m.max() == 0:
+        return False, dict(reason="empty mask")
+    x, y, bw, bh = cv2.boundingRect(m)
+    w, h, fps, n = probe(path)
+    if limit:
+        n = min(n, int(limit)) if n else int(limit)
+    if n < k + 1 or bw < 12 or bh < 10:
+        return False, dict(reason="too short/small")
+    idx = int(ref * fps) if ref is not None else n // 2
+    cap = cv2.VideoCapture(path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, idx))
+    ok, reff = cap.read()
+    if not ok:
+        cap.release()
+        return False, dict(reason="no ref frame")
+    T = _blurf(cv2.cvtColor(reff, cv2.COLOR_BGR2GRAY))[y:y + bh, x:x + bw].copy()
+    sig = _hue_sig(reff[y:y + bh, x:x + bw])
+    if sig is not None and sig[1] < 0.35:
+        sig = None
+    wob = 8
+    wx0, wy0 = max(0, x - wob), max(0, y - wob)
+    wx1, wy1 = min(w, x + bw + wob), min(h, y + bh + wob)
+    stays, cols = [], []
+    for i in np.linspace(0, n - 1, k).round().astype(int):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(i))
+        ok, f = cap.read()
+        if not ok:
+            continue
+        win = _blurf(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY))[wy0:wy1, wx0:wx1]
+        if win.shape[0] < T.shape[0] or win.shape[1] < T.shape[1]:
+            continue
+        r = cv2.matchTemplate(win, T, cv2.TM_CCOEFF_NORMED)
+        stays.append(float(cv2.minMaxLoc(r)[1]))
+        if sig is not None:
+            cols.append(_hue_frac(f[y:y + bh, x:x + bw], sig[0]))
+    cap.release()
+    if not stays:
+        return False, dict(reason="no samples")
+    stay = float(np.median(stays))
+    colstay = float(np.median(cols)) if cols else None
+    moving = ((colstay is not None and colstay < 0.35 * sig[1] and stay < 0.55)
+              or stay < 0.22
+              or (colstay is None and stay < 0.32))
+    return bool(moving), dict(stay=round(stay, 2),
+                              colstay=None if colstay is None else round(colstay, 2))
 
 def clean(input_path, output_path, inp, mask=None, boxes=None, auto=True, track=False,
           preview=None, upscale=None, sharpen=True, protect=True, ref=None):

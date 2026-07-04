@@ -291,12 +291,32 @@ class JobManager:
             if mask.sum() == 0:
                 raise RuntimeError("The erase mask is empty — brush over the object and retry.")
             protect = False
-            if params.get("track"):
-                # MOVING object: opaque inpaint, template-matched each frame
+            forced = bool(params.get("track"))
+            moving = False
+            if not forced and os.environ.get("WR_AUTOTRACK", "1") != "0":
+                # AUTO-TRACK: the reported #1 erase failure was a moving object
+                # marked WITHOUT ticking "Moving object" — the static mask then
+                # inpaints a spot the object has already left, so the object
+                # survives in almost every frame. Probe whether the marked
+                # content actually stays put; if it clearly moves, track it
+                # automatically (the checkbox still forces tracking on).
+                try:
+                    probe_limit = int(seconds * fps) if seconds else int(min(n, 8 * fps))
+                    moving, mstats = wr.marked_region_motion(
+                        video, mask, ref=params.get("track_ref"), limit=probe_limit)
+                    if moving:
+                        print(f"[autotrack] marked region moves {mstats} -> tracking",
+                              flush=True)
+                except Exception as e:
+                    moving = False
+                    print("[autotrack] probe skipped:", e)
+            if forced or moving:
+                # MOVING object: opaque inpaint, tracked each frame
                 # (mark once -> follow). Reverse-blend needs a static region.
                 info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
                 trk = wr._track_setup(video, ref=params.get("track_ref"), mask01=mask)
-                job.message = "Tracking the object..."
+                job.message = ("Tracking the object..." if forced else
+                               "The marked object moves — tracking it across the video...")
                 # QC scoring assumes a static region; skip it for tracked erases.
             else:
                 # SMART ENGINE CHOICE: classify the marked region by its temporal

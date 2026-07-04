@@ -257,6 +257,17 @@ def reference(fid: str):
     return Response(cache, media_type="image/jpeg")
 
 
+def _canvas_limit(meta) -> int:
+    """Frames the mark-up canvas may be picked from: the sharpest frame INSIDE
+    the free-preview span (was: first 400 frames). A user marks the object on
+    this still — if the still sat at, say, t=8 s while the preview renders only
+    the first 4 s, the marked spot may show content the preview never contains
+    and the erase looks like it did nothing. Exports include these frames too,
+    so anchoring the canvas to the preview span is safe for both modes."""
+    fps = meta.get("fps") or 24.0
+    return max(1, min(400, int(PREVIEW_SECONDS * max(fps, 1e-6))))
+
+
 @app.get("/api/frame/{fid}")
 def frame(fid: str):
     """A clean sharp still with NO highlight — the canvas for erase/reframe modes.
@@ -267,7 +278,8 @@ def frame(fid: str):
         raise HTTPException(404, "Unknown file_id (upload first).")
     cache = meta.get("_frame")
     if cache is None:
-        f, idx = wr.sharpest_frame(meta["path"], with_index=True)
+        f, idx = wr.sharpest_frame(meta["path"], limit=_canvas_limit(meta),
+                                   with_index=True)
         if f is None:
             raise HTTPException(400, "Could not read a frame from that video.")
         ok, buf = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 86])
@@ -309,7 +321,8 @@ def detect_regions(fid: str, targets: str = "face"):
     if cache is not None:                       # reuse the canvas still if cached
         f = cv2.imdecode(np.frombuffer(cache, np.uint8), cv2.IMREAD_COLOR)
     else:
-        f, idx = wr.sharpest_frame(meta["path"], with_index=True)
+        f, idx = wr.sharpest_frame(meta["path"], limit=_canvas_limit(meta),
+                                   with_index=True)
         if f is not None:
             meta["_sharp_t"] = idx / max(meta.get("fps") or 24.0, 1e-6)
     if f is None:
