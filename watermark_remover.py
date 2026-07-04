@@ -668,6 +668,50 @@ def _face_cascade():
     return _FACE_CASCADE or None
 
 
+# YuNet — neural face detector (tiny ONNX, ships via the Dockerfile which fetches
+# it from the official OpenCV zoo at build time). Preferred over the Haar
+# cascades for reframe subject-tracking and privacy blur: it handles profile,
+# tilted and partially-occluded faces that Haar misses. Everything falls back
+# to Haar automatically if the model file / OpenCV support is absent.
+_YUNET_PATH = os.environ.get(
+    "WR_YUNET_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 "models", "face_detection_yunet_2023mar.onnx"))
+_YUNET = None
+
+def _yunet():
+    """cv2.FaceDetectorYN (YuNet) instance, or None -> caller uses Haar."""
+    global _YUNET
+    if _YUNET is None:
+        try:
+            if os.path.isfile(_YUNET_PATH) and hasattr(cv2, "FaceDetectorYN_create"):
+                _YUNET = cv2.FaceDetectorYN_create(
+                    _YUNET_PATH, "", (320, 320),
+                    score_threshold=0.6, nms_threshold=0.3, top_k=200)
+                print("[engine] face detector = YuNet (neural)")
+            else:
+                _YUNET = False
+                print("[engine] face detector = Haar (YuNet model not found)")
+        except Exception as e:
+            _YUNET = False
+            print(f"[engine] face detector = Haar (YuNet unavailable: {e})")
+    return _YUNET or None
+
+def _yunet_detect(det, bgr, min_side=0):
+    """YuNet detections on one BGR image -> [(x, y, w, h), ...] int boxes."""
+    h, w = bgr.shape[:2]
+    det.setInputSize((w, h))
+    faces = det.detect(bgr)[1]
+    if faces is None:
+        return []
+    out = []
+    for f in faces:
+        x, y, bw, bh = (int(round(float(v))) for v in f[:4])
+        if bw > 0 and bh > 0 and min(bw, bh) >= min_side:
+            out.append((max(0, x), max(0, y), bw, bh))
+    return out
+
+
 def parse_ratio(ratio):
     """'9:16' -> 0.5625 (w/h). Raises ValueError on nonsense."""
     try:
@@ -692,7 +736,8 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
     step = max(1, int(round(fps / sample_hz)))
     sw = min(max_w, w); sh = max(2, int(round(h * sw / w)))
     kx, ky = w / sw, h / sh
-    face = _face_cascade()
+    yn = _yunet()
+    face = _face_cascade() if yn is None else None   # Haar only as fallback
     ys_g, xs_g = np.mgrid[0:sh, 0:sw].astype(np.float32)
     idxs, cxs, cys, difs = [], [], [], []
     prev = None; n_seen = 0
@@ -710,9 +755,12 @@ def _interest_track(path, limit=None, sample_hz=6.0, max_w=384):
         if dif > 40.0:                           # hard cut -> forget the old face spot
             face_c = None; face_hold = 0
         cx = cy = None
-        if face is not None:
-            det = face.detectMultiScale(g, 1.15, 4,
-                                        minSize=(max(16, sh // 10), max(16, sh // 10)))
+        if yn is not None or face is not None:
+            if yn is not None:                   # neural (YuNet) — BGR input
+                det = _yunet_detect(yn, small, min_side=max(12, sh // 14))
+            else:                                # classical fallback (Haar)
+                det = face.detectMultiScale(g, 1.15, 4,
+                                            minSize=(max(16, sh // 10), max(16, sh // 10)))
             if len(det):
                 a = np.array([bw * bh for (x, y, bw, bh) in det], np.float32)
                 cx = float(sum((x + bw / 2) * ar for (x, y, bw, bh), ar in zip(det, a)) / a.sum())
@@ -920,16 +968,26 @@ def _detect_boxes(gray, targets):
 
 def detect_privacy_boxes(frame, targets):
     """Privacy detections for ONE BGR frame, in FULL frame coords (floats).
-    Detection runs on a downscaled gray for speed; plates get a bit more
-    resolution because the plate cascade's window is comparatively large."""
+    Detection runs on a downscaled copy for speed; plates get a bit more
+    resolution because the plate cascade's window is comparatively large.
+    Faces use the neural YuNet detector when available (profile/tilted/partly
+    covered faces that Haar misses); plates and the Haar fallback share the
+    classical path."""
     h, w = frame.shape[:2]
     dw = min(720 if "plate" in targets else 560, w)
     dh = max(2, int(round(h * dw / w)))
     small = frame if dw == w else cv2.resize(frame, (dw, dh), interpolation=cv2.INTER_AREA)
-    g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
     kx, ky = w / float(dw), h / float(dh)
-    return [(x * kx, y * ky, bw * kx, bh * ky)
-            for (x, y, bw, bh) in _detect_boxes(g, targets)]
+    boxes = []
+    classical = list(targets)
+    yn = _yunet()
+    if "face" in classical and yn is not None:
+        boxes += _yunet_detect(yn, small, min_side=max(10, dh // 22))
+        classical.remove("face")
+    if classical:
+        g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        boxes += _detect_boxes(g, classical)
+    return [(x * kx, y * ky, bw * kx, bh * ky) for (x, y, bw, bh) in boxes]
 
 
 class _RegionTracker:

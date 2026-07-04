@@ -18,6 +18,17 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY watermark_remover.py /app/watermark_remover.py
 COPY backend /app/backend
 
+# Neural face detector (YuNet, ~230 KB ONNX) — fetched from the official OpenCV
+# zoo at build time (kept out of git), then load-tested so a bad download fails
+# the BUILD, never production. At runtime the engine falls back to the classical
+# Haar cascades if this file is missing (see _yunet() in watermark_remover.py).
+RUN mkdir -p /app/models && \
+    python -c "import urllib.request; urllib.request.urlretrieve(\
+'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx',\
+'/app/models/face_detection_yunet_2023mar.onnx')" && \
+    python -c "import cv2; cv2.FaceDetectorYN_create(\
+'/app/models/face_detection_yunet_2023mar.onnx','',(320,320)); print('YuNet load OK')"
+
 # Inpaint backend selection (watermark_remover.Inpainter):
 #   * Set WR_INPAINT_URL (+ WR_INPAINT_TOKEN) -> neural LaMa on the Modal GPU.
 #   * Otherwise this 'classical' default keeps the fast OpenCV fallback on-box.
