@@ -132,17 +132,22 @@ def add_credits(email: str, n: int) -> int:
                   "RETURNING credits", (email, n, n))
         return int(c.fetchone()[0])
 
+def use_credits(email: str, n: int = 1) -> bool:
+    """Atomically spend n credits. Returns False if the balance is below n
+    (nothing is deducted in that case)."""
+    email = email.lower().strip(); n = max(1, int(n))
+    if not DATABASE_URL:
+        if _mem_users.get(email, 0) < n:
+            return False
+        _mem_users[email] -= n; return True
+    with _conn().cursor() as c:
+        c.execute("UPDATE users SET credits=credits-%s "
+                  "WHERE email=%s AND credits>=%s RETURNING credits", (n, email, n))
+        return c.fetchone() is not None
+
 def use_credit(email: str) -> bool:
     """Atomically spend one credit. Returns False if the balance is 0."""
-    email = email.lower().strip()
-    if not DATABASE_URL:
-        if _mem_users.get(email, 0) <= 0:
-            return False
-        _mem_users[email] -= 1; return True
-    with _conn().cursor() as c:
-        c.execute("UPDATE users SET credits=credits-1 "
-                  "WHERE email=%s AND credits>0 RETURNING credits", (email,))
-        return c.fetchone() is not None
+    return use_credits(email, 1)
 
 def event_is_new(event_id: str) -> bool:
     """Idempotency for Stripe webhooks: True the first time we see an event id."""

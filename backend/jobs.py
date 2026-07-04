@@ -167,9 +167,10 @@ class JobManager:
                 email = params.get("refund_on_fail")
                 if email:
                     try:
-                        bal = accounts.add_credits(email, 1)
+                        n = max(1, int(params.get("refund_credits", 1)))
+                        bal = accounts.add_credits(email, n)
                         print(f"[refund] export job {job_id} failed -> returned "
-                              f"1 credit to {email} (balance now {bal})", flush=True)
+                              f"{n} credit(s) to {email} (balance now {bal})", flush=True)
                     except Exception as rerr:
                         print(f"[refund] FAILED to refund {email} for job "
                               f"{job_id}: {rerr}", flush=True)

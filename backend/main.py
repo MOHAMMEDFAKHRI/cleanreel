@@ -395,15 +395,23 @@ def create_job(req: JobRequest, request: Request,
                                  "in a few minutes.")
 
     refund_email = None
+    # Neural enhance sends every full frame through the GPU (Real-ESRGAN +
+    # GFPGAN) — by far the heaviest export — so it costs 2 credits; everything
+    # else stays 1. use_credits is all-or-nothing: an insufficient balance
+    # deducts nothing.
+    export_cost = 2 if task == "enhance" else 1
     if req.mode == "export":                 # preview stays free & anonymous
         if meta["seconds"] > MAX_EXPORT_SECONDS:
             raise HTTPException(413, f"Export limited to {MAX_EXPORT_SECONDS}s in this tier.")
         email = current_user(authorization)
         if not email:
             raise HTTPException(401, "Please sign in to export.")
-        if not accounts.use_credit(email):
-            raise HTTPException(402, "Out of export credits. Buy a pack to export the full video.")
-        refund_email = email                 # paid: worker refunds this credit on failure
+        if not accounts.use_credits(email, export_cost):
+            raise HTTPException(402, ("Enhance exports use 2 credits — you don't have "
+                                      "enough. Buy a pack to export the full video."
+                                      if export_cost > 1 else
+                                      "Out of export credits. Buy a pack to export the full video."))
+        refund_email = email                 # paid: worker refunds these credits on failure
 
     params = {
         "video_path": meta["path"], "task": task,
@@ -411,8 +419,9 @@ def create_job(req: JobRequest, request: Request,
         "upscale": req.upscale, "protect": req.protect,
     }
     if refund_email:
-        # If the render fails, jobs.JobManager._worker returns this credit.
+        # If the render fails, jobs.JobManager._worker returns these credits.
         params["refund_on_fail"] = refund_email
+        params["refund_credits"] = export_cost
     if task in ("remove", "erase", "blur") and req.mask:
         raw = base64.b64decode(req.mask.split(",", 1)[-1])     # tolerate data: URL prefix
         mpath = os.path.join(UPLOADS, f"{req.file_id}_{uuid.uuid4().hex[:8]}_mask.png")
