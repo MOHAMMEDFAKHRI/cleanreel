@@ -68,8 +68,21 @@ _pg = None
 def _conn():
     global _pg
     import psycopg
-    if _pg is None or _pg.closed:
-        _pg = psycopg.connect(DATABASE_URL, autocommit=True)
+    if _pg is not None and not _pg.closed:
+        try:
+            # Ping before reuse: Neon silently kills idle connections
+            # (psycopg.errors.AdminShutdown), and .closed stays False until a
+            # query fails. A cheap SELECT 1 catches the corpse so we reconnect
+            # instead of throwing a 500 at the caller.
+            _pg.execute("SELECT 1")
+            return _pg
+        except Exception:
+            try:
+                _pg.close()
+            except Exception:
+                pass
+            _pg = None
+    _pg = psycopg.connect(DATABASE_URL, autocommit=True, connect_timeout=10)
     return _pg
 
 def init_db():
