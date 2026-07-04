@@ -80,7 +80,7 @@ class Inpainter:
             import requests                      # only needed in remote mode
             self.remote = url
             self.remote_token = os.environ.get("WR_INPAINT_TOKEN", "")
-            self.timeout = float(os.environ.get("WR_INPAINT_TIMEOUT", "60"))
+            self.timeout = float(os.environ.get("WR_INPAINT_TIMEOUT", "120"))
             self._sess = requests.Session()
             self.kind = "modal"
             print("[engine] inpainting backend = modal (GPU)", flush=True)
@@ -105,38 +105,77 @@ class Inpainter:
     def _classical(self, bgr, mask01):
         return cv2.inpaint(bgr, (mask01 * 255).astype(np.uint8), 4, cv2.INPAINT_TELEA)
 
-    def _remote(self, bgr, mask01):
-        """One ROI crop -> Modal GPU LaMa -> inpainted crop. Retries once."""
+    def _remote_batch(self, items):
+        """items: list of (bgr, mask01) with non-empty masks -> list of inpainted
+        BGR crops in the SAME order, in ONE Modal GPU call. Retries once."""
         import base64
-        oki, ib = cv2.imencode(".png", bgr)
-        okm, mb = cv2.imencode(".png", (mask01 * 255).astype(np.uint8))
-        if not (oki and okm):
-            raise RuntimeError("crop encode failed")
-        body = {"token": self.remote_token,
-                "items": [{"image": base64.b64encode(ib).decode(),
-                           "mask": base64.b64encode(mb).decode()}]}
+        payload = []
+        for bgr, m in items:
+            oki, ib = cv2.imencode(".png", bgr)
+            okm, mb = cv2.imencode(".png", (m * 255).astype(np.uint8))
+            if not (oki and okm):
+                raise RuntimeError("crop encode failed")
+            payload.append({"image": base64.b64encode(ib).decode(),
+                            "mask": base64.b64encode(mb).decode()})
+        body = {"token": self.remote_token, "items": payload}
         last = None
         for _ in range(2):
             try:
                 r = self._sess.post(self.remote, json=body, timeout=self.timeout)
                 r.raise_for_status()
-                arr = np.frombuffer(base64.b64decode(r.json()["results"][0]), np.uint8)
-                out = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                if out is None:
-                    raise RuntimeError("bad result png")
-                if out.shape[:2] != bgr.shape[:2]:
-                    out = cv2.resize(out, (bgr.shape[1], bgr.shape[0]))
-                return out
+                outs = r.json()["results"]
+                if len(outs) != len(items):
+                    raise RuntimeError("result count mismatch")
+                res = []
+                for (bgr, _m), b64 in zip(items, outs):
+                    arr = np.frombuffer(base64.b64decode(b64), np.uint8)
+                    o = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if o is None:
+                        raise RuntimeError("bad result png")
+                    if o.shape[:2] != bgr.shape[:2]:
+                        o = cv2.resize(o, (bgr.shape[1], bgr.shape[0]))
+                    res.append(o)
+                return res
             except Exception as e:
                 last = e
         raise last
+
+    def inpaint_batch(self, items):
+        """Inpaint many (bgr, mask01) crops at once, returning BGR crops in order.
+        Empty-mask crops pass through untouched. On the GPU backend this is ONE
+        HTTP round-trip for the whole batch (the export speed-up); if the GPU
+        errors, the whole batch falls back to classical for the affected crops."""
+        if not items:
+            return []
+        todo = [i for i, (b, m) in enumerate(items) if m.max() > 0]
+        out = [b for b, m in items]                     # default: pass through
+        if not todo:
+            return out
+        if self.kind == "modal":
+            try:
+                got = self._remote_batch([items[i] for i in todo])
+                for j, i in enumerate(todo):
+                    out[i] = got[j]
+                return out
+            except Exception as e:
+                if not getattr(self, "_warned", False):
+                    print(f"[modal] batch inpaint failed ({e!r}); using classical "
+                          f"for affected crops", flush=True)
+                    self._warned = True
+                for i in todo:
+                    out[i] = self._classical(*items[i])
+                return out
+        # local lama / classical: no network to amortise, just do each in turn
+        for i in todo:
+            out[i] = self.inpaint(*items[i])
+        return out
 
     def inpaint(self, bgr, mask01):
         if mask01.max() == 0:
             return bgr
         if self.kind == "modal":
             try:
-                return self._remote(bgr, mask01)
+                return self._remote_batch([(bgr, mask01)])[0]
             except Exception as e:
                 if not getattr(self, "_warned", False):
                     print(f"[modal] inpaint failed ({e!r}); using classical for "
@@ -1092,6 +1131,22 @@ def _inpaint_smart(inp, frame, mask01, full_thresh=0.45, pad=24):
     out[y0:y1, x0:x1] = inp.inpaint(frame[y0:y1, x0:x1], mask01[y0:y1, x0:x1])
     return out
 
+def _inpaint_plan(frame, mask01, full_thresh=0.45, pad=24):
+    """Same ROI logic as _inpaint_smart, but PLAN ONLY — describe what to inpaint
+    without doing it, so a whole chunk of frames can be inpainted in one batched
+    GPU call. Returns:
+        None                              -> nothing to inpaint
+        ("full", frame, mask01)           -> dense mask, inpaint the whole frame
+        ((y0, y1, x0, x1), crop, cropmask)-> localized, inpaint just the ROI."""
+    if mask01 is None or mask01.max() == 0:
+        return None
+    if float(mask01.mean()) > full_thresh:
+        return ("full", frame, mask01)
+    ys, xs = np.where(mask01 > 0)
+    y0, y1 = max(0, int(ys.min()) - pad), min(frame.shape[0], int(ys.max()) + pad + 1)
+    x0, x1 = max(0, int(xs.min()) - pad), min(frame.shape[1], int(xs.max()) + pad + 1)
+    return ((y0, y1, x0, x1), frame[y0:y1, x0:x1], mask01[y0:y1, x0:x1])
+
 def process_image(path, out, mask01, inp):
     img = cv2.imread(path)
     if img is None:
@@ -1112,32 +1167,63 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
     mask_bin = (mask01 > 0).astype(np.uint8) if mask01 is not None else None
     tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
     enc = Encoder(w, h, fps, raw, upscale, sharpen)
-    for k, f in enumerate(frames_iter(path, limit)):
+    total = limit or n
+    # Batch size: on the GPU (modal) backend we send a whole chunk of frames' crops
+    # in ONE request — that's the export speed-up (fewer round-trips). The local
+    # classical/lama backends have no network to amortise, so they stream one frame
+    # at a time (chunk = 1) to keep memory flat.
+    chunk = (int(os.environ.get("WR_INPAINT_BATCH", "12"))
+             if getattr(inp, "kind", "") == "modal" else 1)
+    buf = []            # list of [frame, plan]  (plan from _inpaint_plan)
+    written = 0
+
+    def _flush():
+        nonlocal written
+        idxs = [i for i, (fr, pl) in enumerate(buf) if pl is not None]
+        if idxs:
+            crops = [(buf[i][1][1], buf[i][1][2]) for i in idxs]     # (crop, cropmask)
+            done = inp.inpaint_batch(crops)                          # one GPU call
+            for j, i in enumerate(idxs):
+                roi = buf[i][1][0]; res = done[j]
+                if roi == "full":
+                    buf[i][0] = res
+                else:
+                    y0, y1, x0, x1 = roi
+                    fr = buf[i][0].copy(); fr[y0:y1, x0:x1] = res; buf[i][0] = fr
+        for fr, _pl in buf:
+            enc.write(fr); written += 1
+            if progress_cb and total and written % 10 == 0:
+                progress_cb(written, total)
+            if written % 25 == 0:
+                print(f"  frame {written}/{total}", flush=True)
+        buf.clear()
+
+    for f in frames_iter(path, limit):
         # (1) reverse-blend the diffuse periodic layer out of the whole frame
         if B is not None:
             O = f.astype(np.float32); r = np.clip((C-O)/(C-meanf+1e-3), 0, 3.0)
             f = np.clip(O - gain * B * r, 0, 255).astype(np.uint8)
-        # (2) build this frame's mask
+        # (2) build this frame's mask (the tracker is stateful, so this MUST stay in
+        #     frame order — only the inpaint is deferred/batched, never the tracking)
         if track is not None:
-            # MOVING / ANIMATED mark: follow it (multi-scale, gated — see the
-            # tracking section). eff=None when the tracker has no trustworthy
-            # location: the frame is left untouched rather than damaged.
+            # MOVING / ANIMATED mark: follow it (multi-scale, gated). eff=None when
+            # the tracker has no trustworthy location: leave the frame untouched.
             eff, _rect = _track_mask(track, f, on_lost="skip")
         else:
             # STATIC mark: gate to locally-flat pixels so the moving subject
             # (face/hands/clothes detail) is left untouched.
             eff = mask_bin
-            if protect_subject:
+            if protect_subject and eff is not None:
                 gg = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
                 eff = mask_bin & (_flatness(gg, KW) < TAU).astype(np.uint8)
-            eff = cv2.dilate(eff, np.ones((3, 3), np.uint8))
-        # (3) inpaint (ROI-only when localized -> fast + sharp)
-        f = _inpaint_smart(inp, f, eff)
-        enc.write(f)
-        if progress_cb and (limit or n) and k % 10 == 0:
-            progress_cb(k + 1, limit or n)
-        if k % 25 == 0:
-            print(f"  frame {k+1}/{limit or n}", flush=True)
+            if eff is not None:
+                eff = cv2.dilate(eff, np.ones((3, 3), np.uint8))
+        # (3) plan the inpaint; a whole chunk's crops go to the GPU together
+        buf.append([f, _inpaint_plan(f, eff)])
+        if len(buf) >= chunk:
+            _flush()
+    if buf:
+        _flush()
     enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
     print(f"done -> {out}")
 
