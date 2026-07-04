@@ -73,8 +73,12 @@ class Inpainter:
         if engine in ("auto", "lama"):
             try:
                 from simple_lama_inpainting import SimpleLama
+                import torch as _torch
                 self._Image = __import__("PIL.Image", fromlist=["Image"])
-                self.lama = SimpleLama()
+                # Force CPU explicitly. Render has no GPU; letting SimpleLama
+                # default to CUDA (or picking up a CUDA-built torch) triggers
+                # "aten::empty_strided ... CUDA backend" on this box.
+                self.lama = SimpleLama(device=_torch.device("cpu"))
                 self.kind = "lama"
             except Exception as e:
                 if engine == "lama":

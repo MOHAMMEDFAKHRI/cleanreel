@@ -9,11 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libglib2
 WORKDIR /app
 
 # Install deps first (better layer caching).
-# CPU-only torch + torchvision, matched versions from the SAME index.
-# simple-lama-inpainting REQUIRES torchvision (>=0.14.1); if it's pulled from the
-# default PyPI index (via requirements.txt) instead, its build mismatches this
-# CPU torch and `import torchvision` crashes -> LaMa was silently falling back.
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# Pinned CPU torch + torchvision (matched pair, py3.12 wheels on the CPU index).
+# Two reasons for the pin:
+#  1) simple-lama-inpainting REQUIRES torchvision (>=0.14.1); pulling it from the
+#     default PyPI index (via requirements.txt) mismatches torch and crashes on
+#     `import torchvision`.
+#  2) The big-lama TorchScript model (2022) dispatches an op to the CUDA backend
+#     on very new torch builds -> "aten::empty_strided ... CUDA backend" on a
+#     CPU-only box (simple-lama issue #9). 2.2.2 / 0.17.2 run big-lama on CPU.
+RUN pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
