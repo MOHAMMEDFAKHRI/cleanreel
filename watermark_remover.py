@@ -260,18 +260,66 @@ class Encoder:
     def close(self):
         self.p.stdin.close(); self.p.wait()
 
-def mux_audio(video_only, src, out):
+def mux_audio(video_only, src, out, audio=None):
     # -shortest caps the output at the video's length: previews render only the
     # first N seconds of video, and without it the COPIED audio track kept the
     # source's full duration — a 4 s free preview came back as a "20 s" file
     # (frozen last frame + the entire audio). Full exports are unaffected
     # (video and audio already have ~equal length).
+    # `audio` (optional): replacement audio track (e.g. the denoised wav from
+    # clean_audio_track) — re-encoded to AAC; None keeps `src`'s track as a
+    # stream copy, exactly as before.
+    a_in = audio or src
+    acodec = ["-c:a", "aac", "-b:a", "192k"] if audio else ["-c:a", "copy"]
     r = subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", video_only,
-                        "-i", src, "-map", "0:v:0", "-map", "1:a:0?",
-                        "-c:v", "copy", "-c:a", "copy", "-shortest",
+                        "-i", a_in, "-map", "0:v:0", "-map", "1:a:0?",
+                        "-c:v", "copy", *acodec, "-shortest",
                         "-movflags", "+faststart", out])
     if r.returncode != 0:
         shutil.copy(video_only, out)
+
+
+def _deepfilter_bin():
+    """Path to the deep-filter CLI (DeepFilterNet's MIT/Apache-licensed Rust
+    binary, fetched at Docker build time) or None if unavailable."""
+    p = os.environ.get("WR_DEEPFILTER_BIN", "/usr/local/bin/deep-filter")
+    if os.path.isfile(p) and os.access(p, os.X_OK):
+        return p
+    return shutil.which("deep-filter")
+
+
+def clean_audio_track(src, tmpdir):
+    """Extract `src`'s audio and denoise it (hiss/wind/hum) with DeepFilterNet.
+    Returns the cleaned wav path, or None on no-audio / missing binary / any
+    failure — callers keep the original audio. Strictly best-effort."""
+    try:
+        bin_ = _deepfilter_bin()
+        if not bin_:
+            print("[audio] deep-filter binary not found — keeping original audio",
+                  flush=True)
+            return None
+        wav = os.path.join(tmpdir, "orig.wav")
+        r = subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", src,
+                            "-vn", "-acodec", "pcm_s16le", "-ar", "48000", wav])
+        if r.returncode != 0 or not os.path.isfile(wav) or os.path.getsize(wav) < 1024:
+            return None                      # no (usable) audio track
+        outdir = os.path.join(tmpdir, "df")
+        os.makedirs(outdir, exist_ok=True)
+        r = subprocess.run([bin_, wav, "-o", outdir], timeout=600,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode != 0:
+            return None
+        cleaned = os.path.join(outdir, "orig.wav")
+        if not os.path.isfile(cleaned):     # tolerate output-name differences
+            wavs = [os.path.join(outdir, n) for n in os.listdir(outdir)
+                    if n.endswith(".wav")]
+            cleaned = max(wavs, key=os.path.getmtime) if wavs else None
+        if cleaned and os.path.getsize(cleaned) > 1024:
+            return cleaned
+        return None
+    except Exception as e:
+        print(f"[audio] clean failed ({e!r}) — keeping original audio", flush=True)
+        return None
 
 
 def make_before_clip(src, out, preview=None, max_dim=720):

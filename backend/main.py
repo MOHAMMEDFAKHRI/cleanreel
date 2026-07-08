@@ -350,6 +350,7 @@ class JobRequest(BaseModel):
     focus: list[float] | None = None      # reframe: [x, y] normalized 0..1 pins the crop center
     targets: list[str] | None = None      # blur: subset of {'face', 'plate'}
     style: str | None = None              # blur: 'blur' | 'pixelate'
+    clean_audio: bool = False             # any task: denoise audio (DeepFilterNet)
 
 
 @app.post("/api/jobs")
@@ -417,6 +418,7 @@ def create_job(req: JobRequest, request: Request,
         "video_path": meta["path"], "task": task,
         "boxes": [tuple(b) for b in req.boxes] if req.boxes else None,
         "upscale": req.upscale, "protect": req.protect,
+        "clean_audio": bool(req.clean_audio),
     }
     if refund_email:
         # If the render fails, jobs.JobManager._worker returns these credits.

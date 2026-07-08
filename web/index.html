@@ -219,6 +219,7 @@
           <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
         </div>
 
+        <label class="chk"><input id="cleanAudio" type="checkbox"/> <span>Clean audio — remove hiss, wind &amp; background noise (free)</span></label>
         <label class="chk"><input id="owns" type="checkbox"/> <span>I own or have the
           <a href="terms.html" target="_blank" rel="noopener">rights</a> to edit this video</span></label>
         <div class="row">
@@ -607,7 +608,8 @@ ping(20000);                             // pre-warm a sleeping server on page l
 async function run(kind){
   if(!fileId){alert("Upload a video first.");return;}
   if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
-  const body={file_id:fileId,mode:kind,owns_rights:true,protect:true,upscale:true,task};
+  const body={file_id:fileId,mode:kind,owns_rights:true,protect:true,upscale:true,task,
+    clean_audio:$("cleanAudio").checked};
   if(task==='remove'){ if(!maskEmpty()) body.mask=maskPNG(); }
   else if(task==='erase'){
     if(maskEmpty()){alert("Brush over what you want erased first.");return;}

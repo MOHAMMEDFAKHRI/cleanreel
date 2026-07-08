@@ -12,7 +12,7 @@ Production swap-in points are marked with  # PROD:
     * Replace local storage with S3 / Cloudflare R2 (signed URLs).
 """
 from __future__ import annotations
-import os, sys, time, uuid, threading, queue, traceback
+import os, sys, time, uuid, threading, queue, traceback, tempfile, shutil
 import numpy as np
 import cv2
 from dataclasses import dataclass, field, asdict
@@ -150,6 +150,7 @@ class JobManager:
                 job.status = "processing"; job.progress = 0.05
                 job.message = "Starting..."
                 self._run(job, params)
+                self._clean_audio(job, params)   # opt-in add-on; best-effort
                 self._make_before(job, params)   # best-effort; never fails the job
                 job.status = "done"; job.progress = 1.0; job.message = "Done"
                 # Paid exports only (refund_on_fail == the payer's email):
@@ -192,6 +193,31 @@ class JobManager:
                               f"{job_id}: {rerr}", flush=True)
             finally:
                 self.q.task_done()
+
+    def _clean_audio(self, job: Job, params: dict):
+        """Opt-in 'clean audio' add-on: denoise the finished result's audio
+        track (DeepFilterNet CLI) and remux in place. Strictly best-effort —
+        any failure leaves the result exactly as rendered, original audio."""
+        if not params.get("clean_audio") or not job.result_path:
+            return
+        if not os.path.isfile(job.result_path):
+            return
+        job.message = "Cleaning audio..."
+        tmp = tempfile.mkdtemp()
+        try:
+            cleaned = wr.clean_audio_track(job.result_path, tmp)
+            if not cleaned:
+                return
+            swapped = os.path.join(tmp, "swapped.mp4")
+            wr.mux_audio(job.result_path, job.result_path, swapped, audio=cleaned)
+            if os.path.isfile(swapped) and os.path.getsize(swapped) > 0:
+                os.replace(swapped, job.result_path)
+                print(f"[audio] cleaned audio track for job "
+                      f"{getattr(job, 'id', '?')}", flush=True)
+        except Exception as e:
+            print(f"[audio] skipped ({e!r})", flush=True)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def _make_before(self, job: Job, params: dict):
         """Emit a browser-safe H.264 '{job_id}_before.mp4' covering the SAME
