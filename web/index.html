@@ -14,6 +14,20 @@
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="CleanReel — Clean up &amp; repurpose videos you own"/>
 <meta name="twitter:description" content="The rights-aware video cleanup studio. Free preview, sharp results, uploads auto-delete."/>
+<script>
+/* Analytics (PostHog, EU/US cloud free tier). Set PH_KEY to your project's
+   public key to enable; while it's empty, tracking is FULLY disabled and
+   track() is a silent no-op. No cookies banner needed with this config
+   (memory persistence, no cross-site tracking). */
+const PH_KEY="phc_nkxXK3RjHVEvNKCqiKFuXsNecNyDpr2sU2YgTUFNPLL2", PH_HOST="https://us.i.posthog.com";
+if(PH_KEY){
+  const s=document.createElement('script'); s.src=PH_HOST+'/static/array.js'; s.async=true;
+  s.onload=()=>{ try{ posthog.init(PH_KEY,{api_host:PH_HOST,
+    persistence:'memory',person_profiles:'identified_only',autocapture:false}); }catch(e){} };
+  document.head.appendChild(s);
+}
+function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posthog.capture(ev,props||{}); }catch(e){} }
+</script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"CleanReel",
 "applicationCategory":"MultimediaApplication","operatingSystem":"Web",
@@ -155,7 +169,7 @@
           <button id="up" class="btn ghost">Upload</button>
           <span id="meta" class="pill"></span>
         </div>
-        <p class="hint" id="uploadLimit">Up to 60s per video in this tier.</p>
+        <p class="hint" id="uploadLimit">Up to 60s · max 200 MB per video in this tier.</p>
         <p class="hint">Only upload videos you own or are <a href="terms.html" target="_blank" rel="noopener">licensed to edit</a> · uploads auto-delete within ~6 hours.</p>
         <p class="hint warn" id="tooLong" style="display:none"></p>
 
@@ -289,6 +303,12 @@
     <br/><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> ·
     <a href="refunds.html">Refunds</a> · <a href="mailto:support@cleanreel.app">Contact</a> ·
     <a href="mailto:abuse@cleanreel.app">Report abuse</a> · <a href="#faq">FAQ</a>
+    <br/>Tools: <a href="/remove-watermark-from-video">Remove watermark</a> ·
+    <a href="/remove-logo-from-video">Remove logo</a> ·
+    <a href="/remove-text-from-video">Remove text &amp; subtitles</a> ·
+    <a href="/remove-object-from-video">Erase objects</a> ·
+    <a href="/blur-face-in-video">Blur faces &amp; plates</a> ·
+    <a href="/video-enhancer">Video enhancer</a>
   </footer>
 </div>
 
@@ -410,6 +430,7 @@ $("buy").onclick=async()=>{
   bp.style.display='flex';
 };
 async function checkout(pack){
+  track('checkout_started',{pack});
   try{ const r=await fetch(API+'/api/checkout',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({pack})});
     const d=await r.json();
     if(r.ok&&d.url) location.href=d.url; else alert(d.detail||'Could not start checkout.');
@@ -583,10 +604,13 @@ async function doUpload(){
           await new Promise(res=>setTimeout(res,2500)); }
       }
     }
-    if(!r){ $("meta").textContent="Could not reach the server — check your connection and try again."; return; }
-    if(!r.ok){ $("meta").textContent="Error: "+((d&&d.detail)||"upload failed"); return; }
+    if(!r){ track('upload_failed',{reason:'network'});
+      $("meta").textContent="Could not reach the server — check your connection and try again."; return; }
+    if(!r.ok){ track('upload_failed',{reason:'rejected',code:r.status});
+      $("meta").textContent="Error: "+((d&&d.detail)||"upload failed"); return; }
     fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
     lastUp=f.name+"|"+f.size+"|"+f.lastModified;    // double-upload guard key
+    track('upload_ok',{seconds:d.seconds,w:vw,h:vh});
     if(rawBeforeURL) URL.revokeObjectURL(rawBeforeURL);
     rawBeforeURL=URL.createObjectURL(f); // last-resort Compare fallback (see compareReady)
     $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
@@ -601,7 +625,7 @@ $("up").addEventListener("click",doUpload);
 let MAXSEC=60;                           // clip-length cap; refreshed from /api/health
 fetch(API+"/api/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
   if(d&&d.max_export_seconds){ MAXSEC=d.max_export_seconds;
-    $("uploadLimit").innerHTML=`Up to <b>${MAXSEC}s</b> per video · previews are free, export cleans the whole clip.`; }
+    $("uploadLimit").innerHTML=`Up to <b>${MAXSEC}s</b> · max 200 MB per video · previews are free, export cleans the whole clip.`; }
 }).catch(()=>{});
 $("file").addEventListener("change",()=>{
   if(uploading) return;
@@ -617,7 +641,7 @@ $("file").addEventListener("change",()=>{
 });
 ping(20000);                             // pre-warm a sleeping server on page load
 
-let jobRunning=false;
+let jobRunning=false, lastMode='preview';
 function jobBusy(b){ jobRunning=b; $("prev").disabled=b; $("exp").disabled=b;
   if(!b) $("mailNote").style.display="none"; }
 async function run(kind){
@@ -683,6 +707,9 @@ async function run(kind){
         'so it\'s safe to close this tab.';
       $("mailNote").style.display='block';
     }
+    track(kind==='export'?'export_submitted':'preview_submitted',
+          {task,clean_audio:$("cleanAudio").checked});
+    lastMode=kind;
     poll(d.job_id, task);
   }catch(e){ jobBusy(false); $("status").textContent="Network error."; }
 }
@@ -696,7 +723,9 @@ async function poll(id, t, fails=0){
     const j=await r.json();
     $("prog").style.width=Math.round((j.progress||0)*100)+"%";
     $("status").textContent=j.message||j.status;
-    if(j.status==="done"){jobBusy(false);const now=Date.now(), u=API+j.result_url+"?t="+now;
+    if(j.status==="done"){jobBusy(false);
+      track('job_done',{task:t,mode:lastMode,confidence:j.qc?j.qc.confidence:null});
+      const now=Date.now(), u=API+j.result_url+"?t="+now;
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
       compareReady(u,t,j.before_url?API+j.before_url+"?t="+now:null);
       const editTask=(t==='remove'||t==='erase'||t==='blur');
@@ -709,7 +738,9 @@ async function poll(id, t, fails=0){
       } else { $("status").textContent=beforeURL
         ?"Done ✓ — flip to Compare to see before / after.":"Done ✓ — your result is ready."; }
       return;}
-    if(j.status==="error"){ jobBusy(false); $("prog").style.width="0";
+    if(j.status==="error"){ jobBusy(false);
+      track('job_error',{task:t,mode:lastMode});
+      $("prog").style.width="0";
       $("status").textContent="⚠ "+(j.error||"Processing failed.")+
         " Tweak your settings and try again — previews are free."; return; }
     setTimeout(()=>poll(id,t),1200);
@@ -768,54 +799,4 @@ function showView(mode){                   // 'result' | 'compare'
     const A=slide?cmpA:sbsA, B=slide?cmpB:sbsB;
     if(A.getAttribute('src')!==afterURL) A.src=afterURL;    // lazy-load on first open
     if(B.getAttribute('src')!==beforeURL) B.src=beforeURL;
-    if(slide){ sizeCmp(); setCmpPos(cmpPos); if(!cmpRAF) cmpRAF=requestAnimationFrame(cmpTick); }
-    try{ A.currentTime=0; B.currentTime=0; }catch(e){}       // start both aligned
-    A.play().catch(()=>{}); B.play().catch(()=>{});
-  } else {
-    [cmpA,cmpB,sbsA,sbsB].forEach(v=>{ try{ v.pause(); }catch(e){} });
-  }
-}
-$("vResult").onclick=()=>showView('result');
-$("vCompare").onclick=()=>showView('compare');
-function compareReady(url,t,before){       // a job finished -> offer the toggle
-  afterURL=url; cmpTask=t;
-  beforeURL=before||rawBeforeURL||null;    // prefer the server clip; raw file = last resort
-  $("vCompare").style.display=beforeURL?'':'none';
-  $("viewBar").style.display=beforeURL?'flex':'none';   // no before -> Result only
-}
-function beforeBroken(){                   // before can't load -> never show a black compare
-  if(!beforeURL) return;
-  const active=$("vCompare").classList.contains('active');
-  if(rawBeforeURL&&beforeURL!==rawBeforeURL){          // one retry: the raw upload
-    beforeURL=rawBeforeURL;
-    [cmpB,sbsB].forEach(v=>v.removeAttribute('src')); // force a reload on next show
-    if(active) showView('compare');
-    return;
-  }
-  beforeURL=null;                          // out of options -> Result only
-  $("vCompare").style.display='none'; $("viewBar").style.display='none';
-  showView('result');
-}
-[cmpB,sbsB].forEach(v=>{
-  v.addEventListener('error',()=>{ if(v.getAttribute('src')) beforeBroken(); });
-  v.addEventListener('stalled',()=>{ if(v.getAttribute('src')&&v.readyState===0) beforeBroken(); });
-});
-function resetCompare(){                   // new upload / new job -> back to Result
-  afterURL=null; beforeURL=null;           // the before clip belongs to ONE job
-  $("viewBar").style.display='none'; $("vCompare").style.display='none';
-  showView('result');
-  [cmpA,cmpB,sbsA,sbsB].forEach(v=>v.removeAttribute('src'));
-}
-/* drag (or tap) anywhere on the slider to sweep before/after */
-let cmpDrag=false; const slideEl=$("cmpSlide");
-function cmpFromEvent(e){ const r=slideEl.getBoundingClientRect();
-  setCmpPos((e.clientX-r.left)/(r.width||1)); }
-slideEl.addEventListener('pointerdown',e=>{ e.preventDefault(); cmpDrag=true;
-  try{ slideEl.setPointerCapture(e.pointerId); }catch(x){} cmpFromEvent(e); });
-slideEl.addEventListener('pointermove',e=>{ if(cmpDrag) cmpFromEvent(e); });
-['pointerup','pointercancel'].forEach(ev=>slideEl.addEventListener(ev,()=>cmpDrag=false));
-
-setTask('remove');   // sync the per-mode controls once at startup
-</script>
-</body>
-</html>
+    if(slide){ sizeCmp(); setCmpPos(cmpPos); if(!cmpRAF) cmpRAF=request
