@@ -799,4 +799,54 @@ function showView(mode){                   // 'result' | 'compare'
     const A=slide?cmpA:sbsA, B=slide?cmpB:sbsB;
     if(A.getAttribute('src')!==afterURL) A.src=afterURL;    // lazy-load on first open
     if(B.getAttribute('src')!==beforeURL) B.src=beforeURL;
-    if(slide){ sizeCmp(); setCmpPos(cmpPos); if(!cmpRAF) cmpRAF=request
+    if(slide){ sizeCmp(); setCmpPos(cmpPos); if(!cmpRAF) cmpRAF=requestAnimationFrame(cmpTick); }
+    try{ A.currentTime=0; B.currentTime=0; }catch(e){}       // start both aligned
+    A.play().catch(()=>{}); B.play().catch(()=>{});
+  } else {
+    [cmpA,cmpB,sbsA,sbsB].forEach(v=>{ try{ v.pause(); }catch(e){} });
+  }
+}
+$("vResult").onclick=()=>showView('result');
+$("vCompare").onclick=()=>showView('compare');
+function compareReady(url,t,before){       // a job finished -> offer the toggle
+  afterURL=url; cmpTask=t;
+  beforeURL=before||rawBeforeURL||null;    // prefer the server clip; raw file = last resort
+  $("vCompare").style.display=beforeURL?'':'none';
+  $("viewBar").style.display=beforeURL?'flex':'none';   // no before -> Result only
+}
+function beforeBroken(){                   // before can't load -> never show a black compare
+  if(!beforeURL) return;
+  const active=$("vCompare").classList.contains('active');
+  if(rawBeforeURL&&beforeURL!==rawBeforeURL){          // one retry: the raw upload
+    beforeURL=rawBeforeURL;
+    [cmpB,sbsB].forEach(v=>v.removeAttribute('src')); // force a reload on next show
+    if(active) showView('compare');
+    return;
+  }
+  beforeURL=null;                          // out of options -> Result only
+  $("vCompare").style.display='none'; $("viewBar").style.display='none';
+  showView('result');
+}
+[cmpB,sbsB].forEach(v=>{
+  v.addEventListener('error',()=>{ if(v.getAttribute('src')) beforeBroken(); });
+  v.addEventListener('stalled',()=>{ if(v.getAttribute('src')&&v.readyState===0) beforeBroken(); });
+});
+function resetCompare(){                   // new upload / new job -> back to Result
+  afterURL=null; beforeURL=null;           // the before clip belongs to ONE job
+  $("viewBar").style.display='none'; $("vCompare").style.display='none';
+  showView('result');
+  [cmpA,cmpB,sbsA,sbsB].forEach(v=>v.removeAttribute('src'));
+}
+/* drag (or tap) anywhere on the slider to sweep before/after */
+let cmpDrag=false; const slideEl=$("cmpSlide");
+function cmpFromEvent(e){ const r=slideEl.getBoundingClientRect();
+  setCmpPos((e.clientX-r.left)/(r.width||1)); }
+slideEl.addEventListener('pointerdown',e=>{ e.preventDefault(); cmpDrag=true;
+  try{ slideEl.setPointerCapture(e.pointerId); }catch(x){} cmpFromEvent(e); });
+slideEl.addEventListener('pointermove',e=>{ if(cmpDrag) cmpFromEvent(e); });
+['pointerup','pointercancel'].forEach(ev=>slideEl.addEventListener(ev,()=>cmpDrag=false));
+
+setTask('remove');   // sync the per-mode controls once at startup
+</script>
+</body>
+</html>
