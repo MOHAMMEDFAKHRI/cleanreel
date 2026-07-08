@@ -229,6 +229,7 @@
         <span id="cred" class="pill"></span>
         <div class="bar"><i id="prog"></i></div>
         <p id="status" class="pill"></p>
+        <p class="hint" id="mailNote" style="display:none"></p>
       </div>
       <div>
         <p class="step-tag">Step 3 · Result</p>
@@ -615,7 +616,8 @@ $("file").addEventListener("change",()=>{
 ping(20000);                             // pre-warm a sleeping server on page load
 
 let jobRunning=false;
-function jobBusy(b){ jobRunning=b; $("prev").disabled=b; $("exp").disabled=b; }
+function jobBusy(b){ jobRunning=b; $("prev").disabled=b; $("exp").disabled=b;
+  if(!b) $("mailNote").style.display="none"; }
 async function run(kind){
   if(!fileId){alert("Upload a video first.");return;}
   if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
@@ -672,6 +674,12 @@ async function run(kind){
       else if(r.status===429){ $("status").textContent=(d&&d.detail)||"We're at capacity right now — please try again in a few minutes."; }
       else $("status").textContent="Error: "+(d.detail||"failed");
       return;
+    }
+    if(kind==='export'){
+      $("mailNote").innerHTML='📧 Exports can take a while — we\'ll email <b>'+
+        ((auth&&auth.email)||'you')+'</b> with a download link the moment it\'s ready, '+
+        'so it\'s safe to close this tab.';
+      $("mailNote").style.display='block';
     }
     poll(d.job_id, task);
   }catch(e){ jobBusy(false); $("status").textContent="Network error."; }
