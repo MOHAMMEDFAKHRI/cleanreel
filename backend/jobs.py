@@ -152,6 +152,18 @@ class JobManager:
                 self._run(job, params)
                 self._make_before(job, params)   # best-effort; never fails the job
                 job.status = "done"; job.progress = 1.0; job.message = "Done"
+                # Paid exports only (refund_on_fail == the payer's email):
+                # tell them it's ready — long exports mean closed tabs.
+                # send_export_email is internally best-effort, but guard anyway
+                # so a notify bug can never flip a finished job to "error".
+                try:
+                    if params.get("refund_on_fail"):
+                        accounts.send_export_email(
+                            params["refund_on_fail"], job_id,
+                            params.get("task", "export"), ok=True,
+                            ttl_hours=STORAGE_TTL_HOURS)
+                except Exception:
+                    pass
             except Exception as e:
                 job.status = "error"; job.error = str(e)
                 job.message = "Failed"
@@ -171,6 +183,10 @@ class JobManager:
                         bal = accounts.add_credits(email, n)
                         print(f"[refund] export job {job_id} failed -> returned "
                               f"{n} credit(s) to {email} (balance now {bal})", flush=True)
+                        accounts.send_export_email(
+                            email, job_id, params.get("task", "export"),
+                            ok=False, credits_refunded=n,
+                            ttl_hours=STORAGE_TTL_HOURS)
                     except Exception as rerr:
                         print(f"[refund] FAILED to refund {email} for job "
                               f"{job_id}: {rerr}", flush=True)

@@ -161,6 +161,57 @@ def event_is_new(event_id: str) -> bool:
         return c.fetchone() is not None
 
 # --------------------------------------------------------------------------- #
+# Export notification email (Resend HTTP API; stdlib only)
+# --------------------------------------------------------------------------- #
+def send_export_email(email: str, job_id: str, task: str, ok: bool,
+                      credits_refunded: int = 0, ttl_hours: float = 6.0) -> None:
+    """Notify the exporter that their paid export finished (or failed and was
+    auto-refunded). Exports can take 20+ minutes, so users close the tab — this
+    brings them back. STRICTLY best-effort: every failure is logged and
+    swallowed; an email problem must never affect the job. No-op without
+    RESEND_API_KEY, or with WR_EXPORT_EMAIL=0 (kill switch)."""
+    try:
+        if os.environ.get("WR_EXPORT_EMAIL", "1").lower() in ("0", "false"):
+            return
+        if not RESEND_KEY or not email:
+            return
+        api = os.environ.get("API_URL", "https://cleanreel.onrender.com").rstrip("/")
+        nice = {"remove": "Watermark removal", "erase": "Object erase",
+                "enhance": "Enhance", "reframe": "Reframe",
+                "blur": "Privacy blur"}.get(task, "Video cleanup")
+        if ok:
+            subject = f"Your CleanReel export is ready — {nice}"
+            html = (f"<p>Your <b>{nice}</b> export has finished.</p>"
+                    f'<p><a href="{api}/api/result/{job_id}">Download your video</a></p>'
+                    f"<p>Heads up: results auto-delete after ~{ttl_hours:g} hours "
+                    f"(our privacy promise), so grab it soon. You can also reopen "
+                    f'<a href="{SITE_URL}">cleanreel.app</a>.</p>')
+        else:
+            subject = (f"Your CleanReel export failed — "
+                       f"{credits_refunded} credit(s) refunded")
+            html = (f"<p>Sorry — your <b>{nice}</b> export hit an error and didn't "
+                    f"finish.</p><p>We've automatically returned "
+                    f"<b>{credits_refunded} credit(s)</b> to your account. Previews "
+                    f'are free — try again any time at <a href="{SITE_URL}">'
+                    f"cleanreel.app</a>.</p>")
+        payload = json.dumps({"from": MAIL_FROM, "to": [email],
+                              "subject": subject, "html": html}).encode()
+        req = urllib.request.Request(
+            "https://api.resend.com/emails", data=payload,
+            headers={"Authorization": f"Bearer {RESEND_KEY}",
+                     "Content-Type": "application/json",
+                     "Accept": "application/json",
+                     # A real User-Agent avoids Cloudflare error 1010 (see §9).
+                     "User-Agent": "CleanReel/1.0 (+https://cleanreel.app)"})
+        urllib.request.urlopen(req, timeout=10).read()
+        print(f"[notify] export email sent to {email} (job {job_id}, ok={ok})",
+              flush=True)
+    except Exception as e:
+        print(f"[notify] export email FAILED for {email} (job {job_id}): {e}",
+              flush=True)
+
+
+# --------------------------------------------------------------------------- #
 # Magic-link email (Resend HTTP API; stdlib only)
 # --------------------------------------------------------------------------- #
 def send_magic_link(email: str) -> str | None:
