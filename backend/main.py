@@ -201,6 +201,14 @@ async def stripe_webhook(request: Request):
     return {"received": True}
 
 
+@app.get("/api/file/{file_id}")
+def file_exists(file_id: str):
+    """Cheap liveness check for an upload: FILES is in-memory, so a deploy or
+    restart forgets uploads — the front end uses this to decide whether
+    'already uploaded' is still true before skipping a re-upload."""
+    return {"ok": file_id in FILES}
+
+
 @app.post("/api/upload")
 async def upload(request: Request, file: UploadFile = File(...)):
     rate_limit(request, "upload", RATE_UPLOAD_PER_HOUR)

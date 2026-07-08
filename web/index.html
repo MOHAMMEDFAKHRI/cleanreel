@@ -553,7 +553,13 @@ async function doUpload(){
   const f=$("file").files[0]; if(!f){alert("Choose a video first.");return;}
   if(uploading) return;                  // the button is locked while in flight
   if(fileId && lastUp===f.name+"|"+f.size+"|"+f.lastModified){
-    $("meta").innerHTML='<span class="ok">Already uploaded</span> — ready to go.'; return; }
+    // trust the browser only if the SERVER still remembers the file — a
+    // deploy/restart wipes its in-memory uploads
+    const alive=await fetch(API+"/api/file/"+fileId,{cache:"no-store"})
+      .then(r=>r.ok?r.json():{ok:false}).then(d=>!!d.ok).catch(()=>false);
+    if(alive){ $("meta").innerHTML='<span class="ok">Already uploaded</span> — ready to go.'; return; }
+    fileId=null; lastUp=null;            // server forgot it -> really re-upload
+  }
   uploading=true; const btn=$("up"); btn.disabled=true; const label=btn.textContent;
   try{
     btn.textContent="Connecting…"; $("meta").textContent="Connecting to the server…";
@@ -649,6 +655,12 @@ async function run(kind){
     if(!r.ok){
       jobBusy(false);
       $("prog").style.width="0";
+      if(r.status===404 && /file_id/i.test((d&&d.detail)||"")){
+        fileId=null; lastUp=null;        // server restarted: its uploads are gone
+        $("prev").disabled=true; $("exp").disabled=true;
+        $("status").textContent="The server restarted and forgot your upload — hit Upload again (takes a moment), then re-run.";
+        return;
+      }
       if(r.status===401){
         $("status").textContent="";
         $("signinNudge").innerHTML='🔒 <b>Sign in to export</b> — it\'s free to start and previews stay free. Enter your email below and we\'ll send you a one-tap sign-in link.';
