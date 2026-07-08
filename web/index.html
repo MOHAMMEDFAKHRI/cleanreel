@@ -548,10 +548,12 @@ function ping(ms){                       // resolves true if the API answers in 
   return fetch(API+"/api/health",{cache:"no-store",signal:c.signal})
     .then(r=>r.ok).catch(()=>false).finally(()=>clearTimeout(t));
 }
-let uploading=false;
+let uploading=false, lastUp=null;
 async function doUpload(){
   const f=$("file").files[0]; if(!f){alert("Choose a video first.");return;}
   if(uploading) return;                  // the button is locked while in flight
+  if(fileId && lastUp===f.name+"|"+f.size+"|"+f.lastModified){
+    $("meta").innerHTML='<span class="ok">Already uploaded</span> — ready to go.'; return; }
   uploading=true; const btn=$("up"); btn.disabled=true; const label=btn.textContent;
   try{
     btn.textContent="Connecting…"; $("meta").textContent="Connecting to the server…";
@@ -575,6 +577,7 @@ async function doUpload(){
     if(!r){ $("meta").textContent="Could not reach the server — check your connection and try again."; return; }
     if(!r.ok){ $("meta").textContent="Error: "+((d&&d.detail)||"upload failed"); return; }
     fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
+    lastUp=f.name+"|"+f.size+"|"+f.lastModified;    // double-upload guard key
     if(rawBeforeURL) URL.revokeObjectURL(rawBeforeURL);
     rawBeforeURL=URL.createObjectURL(f); // last-resort Compare fallback (see compareReady)
     $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
@@ -605,9 +608,13 @@ $("file").addEventListener("change",()=>{
 });
 ping(20000);                             // pre-warm a sleeping server on page load
 
+let jobRunning=false;
+function jobBusy(b){ jobRunning=b; $("prev").disabled=b; $("exp").disabled=b; }
 async function run(kind){
   if(!fileId){alert("Upload a video first.");return;}
   if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
+  if(jobRunning){ $("status").textContent="A job is already running — hang tight."; return; }
+  jobBusy(true);
   const body={file_id:fileId,mode:kind,owns_rights:true,protect:true,upscale:true,task,
     clean_audio:$("cleanAudio").checked};
   if(task==='remove'){ if(!maskEmpty()) body.mask=maskPNG(); }
@@ -640,6 +647,7 @@ async function run(kind){
       headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify(body)});
     const d=await r.json();
     if(!r.ok){
+      jobBusy(false);
       $("prog").style.width="0";
       if(r.status===401){
         $("status").textContent="";
@@ -654,7 +662,7 @@ async function run(kind){
       return;
     }
     poll(d.job_id, task);
-  }catch(e){$("status").textContent="Network error.";}
+  }catch(e){ jobBusy(false); $("status").textContent="Network error."; }
 }
 $("prev").onclick=()=>run("preview");
 $("exp").onclick=()=>run("export");
@@ -666,7 +674,7 @@ async function poll(id, t, fails=0){
     const j=await r.json();
     $("prog").style.width=Math.round((j.progress||0)*100)+"%";
     $("status").textContent=j.message||j.status;
-    if(j.status==="done"){const now=Date.now(), u=API+j.result_url+"?t="+now;
+    if(j.status==="done"){jobBusy(false);const now=Date.now(), u=API+j.result_url+"?t="+now;
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
       compareReady(u,t,j.before_url?API+j.before_url+"?t="+now:null);
       const editTask=(t==='remove'||t==='erase'||t==='blur');
@@ -679,14 +687,14 @@ async function poll(id, t, fails=0){
       } else { $("status").textContent=beforeURL
         ?"Done ✓ — flip to Compare to see before / after.":"Done ✓ — your result is ready."; }
       return;}
-    if(j.status==="error"){ $("prog").style.width="0";
+    if(j.status==="error"){ jobBusy(false); $("prog").style.width="0";
       $("status").textContent="⚠ "+(j.error||"Processing failed.")+
         " Tweak your settings and try again — previews are free."; return; }
     setTimeout(()=>poll(id,t),1200);
   }catch(e){
     if(fails<12){ $("status").textContent="Still working… the server may be waking from a nap (~30 s) — hang tight.";
       setTimeout(()=>poll(id,t,fails+1),3000); }
-    else { $("status").textContent="Lost the connection while processing. The job may still be running — try again in a minute."; }
+    else { jobBusy(false); $("status").textContent="Lost the connection while processing. The job may still be running — try again in a minute."; }
   }
 }
 /* ---------- before / after compare ---------- */

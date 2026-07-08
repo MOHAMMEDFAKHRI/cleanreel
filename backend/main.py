@@ -395,6 +395,15 @@ def create_job(req: JobRequest, request: Request,
         raise HTTPException(429, "We're at capacity right now — please try again "
                                  "in a few minutes.")
 
+    # Double-submit guard: the same file + task + mode while an identical job
+    # is still queued/processing is almost always an accidental second click.
+    # Rejected BEFORE the credit deduction below, so a duplicate export can
+    # never double-charge.
+    dup_key = f"{req.file_id}|{task}|{req.mode}"
+    if manager.has_active(dup_key):
+        raise HTTPException(409, "That job is already queued or running — hang "
+                                 "tight, no need to submit it again.")
+
     refund_email = None
     # Neural enhance sends every full frame through the GPU (Real-ESRGAN +
     # GFPGAN) — by far the heaviest export — so it costs 2 credits; everything
@@ -456,7 +465,7 @@ def create_job(req: JobRequest, request: Request,
         if req.focus is not None:
             params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
                                max(0.0, min(1.0, float(req.focus[1]))))
-    job_id = manager.submit(req.mode, params)
+    job_id = manager.submit(req.mode, params, key=dup_key)
     print(f"[job] mode={req.mode} task={task} id={job_id}", flush=True)
     return {"job_id": job_id, "mode": req.mode, "task": task}
 

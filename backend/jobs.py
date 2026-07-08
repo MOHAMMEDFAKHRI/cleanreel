@@ -74,9 +74,12 @@ class Job:
     error: str | None = None
     qc: dict | None = None          # quality report: confidence, residual_reduction, damage
     created: float = field(default_factory=time.time)
+    key: str | None = None          # dedup key (file_id|task|mode) — double-submit guard
 
     def public(self):
-        d = asdict(self); d.pop("result_path", None); d.pop("before_path", None); return d
+        d = asdict(self)
+        d.pop("result_path", None); d.pop("before_path", None); d.pop("key", None)
+        return d
 
 
 class JobManager:
@@ -91,11 +94,17 @@ class JobManager:
         self._jt.start()
 
     # ---- public API ----
-    def submit(self, mode: str, params: dict) -> str:
-        job = Job(id=uuid.uuid4().hex, mode=mode)
+    def submit(self, mode: str, params: dict, key: str | None = None) -> str:
+        job = Job(id=uuid.uuid4().hex, mode=mode, key=key)
         self.jobs[job.id] = job
         self.q.put((job.id, params))
         return job.id
+
+    def has_active(self, key: str) -> bool:
+        """True if an identical job (same dedup key) is queued or processing —
+        the server-side guard against accidental double-submits."""
+        return any(j.key == key and j.status in ("queued", "processing")
+                   for j in self.jobs.values())
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
