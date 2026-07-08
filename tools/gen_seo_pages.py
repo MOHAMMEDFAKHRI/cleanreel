@@ -15,6 +15,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 
 PAGES = {
     "remove-watermark-from-video": dict(
+        task="remove",
         title="Remove a Watermark from Video Online (Videos You Own) — CleanReel",
         h1="Remove a watermark from your video",
         desc="Remove your old watermarks from videos you own — AI inpainting fills the area "
@@ -44,6 +45,7 @@ PAGES = {
         related=["remove-logo-from-video", "remove-text-from-video", "remove-object-from-video"]),
 
     "remove-logo-from-video": dict(
+        task="remove",
         title="Remove a Logo from Video Online (Rebrands & Old Marks) — CleanReel",
         h1="Remove an old logo from your video",
         desc="Rebranded? Erase your old logo from existing videos instead of re-editing them. "
@@ -72,6 +74,7 @@ PAGES = {
         related=["remove-watermark-from-video", "remove-object-from-video", "video-enhancer"]),
 
     "remove-text-from-video": dict(
+        task="remove",
         title="Remove Text, Subtitles & Timestamps from Video — CleanReel",
         h1="Remove burned-in text from your video",
         desc="Erase burned-in subtitles, timestamps, and captions from videos you own. AI fills "
@@ -99,6 +102,7 @@ PAGES = {
         related=["remove-watermark-from-video", "remove-object-from-video", "blur-face-in-video"]),
 
     "remove-object-from-video": dict(
+        task="erase",
         title="Remove Objects or People from Video Online — CleanReel",
         h1="Erase objects from your video",
         desc="Remove photobombers, trash, cables, or any distraction from videos you own. "
@@ -126,6 +130,7 @@ PAGES = {
         related=["remove-watermark-from-video", "remove-text-from-video", "blur-face-in-video"]),
 
     "blur-face-in-video": dict(
+        task="blur",
         title="Blur Faces & License Plates in Video (Privacy) — CleanReel",
         h1="Blur faces &amp; plates in your video",
         desc="Auto-detect and blur every face or license plate across your video — for privacy, "
@@ -153,6 +158,7 @@ PAGES = {
         related=["remove-object-from-video", "remove-text-from-video", "video-enhancer"]),
 
     "video-enhancer": dict(
+        task="enhance",
         title="AI Video Enhancer — Sharpen, Denoise & Upscale Online — CleanReel",
         h1="Enhance &amp; upscale your video",
         desc="True neural enhancement: Real-ESRGAN restoration, face restore, denoise and 2× "
@@ -225,12 +231,12 @@ TEMPLATE = """<!doctype html>
 <div class="wrap">
   <header>
     <a class="logo" href="/">✨ Clean<span>Reel</span></a>
-    <a class="btn" href="/#tool">Try free →</a>
+    <a class="btn" href="/#tool={task}">Try free →</a>
   </header>
 
   <h1>{h1_html}</h1>
   <p>{intro}</p>
-  <p><a class="btn" href="/#tool">Open the studio — free preview</a></p>
+  <p><a class="btn" href="/#tool={task}">Open the studio — free preview</a></p>
 
   <div class="card trust"><p><b style="color:var(--ink)">For content you own.</b>
   Only upload videos you own or are <a href="/terms.html">licensed to edit</a>.
@@ -251,7 +257,7 @@ TEMPLATE = """<!doctype html>
   <h2>FAQ</h2>
   {faq_html}
 
-  <p style="margin-top:26px"><a class="btn" href="/#tool">Clean up your video →</a></p>
+  <p style="margin-top:26px"><a class="btn" href="/#tool={task}">Clean up your video →</a></p>
 
   <p class="rel"><b style="color:var(--ink)">Related tools:</b> {related}</p>
 
@@ -283,6 +289,7 @@ def build(slug, p):
     related = " ".join(f'<a href="/{r}">{html.escape(NICE[r])}</a>' for r in p["related"])
     return TEMPLATE.format(
         title=html.escape(p["title"]), desc=html.escape(p["desc"]), site=SITE, slug=slug,
+        task=p["task"],
         faq_schema=faq_schema, css=CSS,
         h1_html=p["h1"].replace("your", "<em>your</em>", 1),
         intro=html.escape(p["intro"]),

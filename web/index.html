@@ -846,7 +846,12 @@ slideEl.addEventListener('pointerdown',e=>{ e.preventDefault(); cmpDrag=true;
 slideEl.addEventListener('pointermove',e=>{ if(cmpDrag) cmpFromEvent(e); });
 ['pointerup','pointercancel'].forEach(ev=>slideEl.addEventListener(ev,()=>cmpDrag=false));
 
-setTask('remove');   // sync the per-mode controls once at startup
+/* deep-link from SEO pages: /#tool=erase|blur|enhance|reframe|remove */
+const _deepTask=(location.hash.match(/^#tool=(remove|erase|enhance|reframe|blur)$/)||[])[1];
+setTask(_deepTask||'remove');   // sync the per-mode controls once at startup
+if(_deepTask){ history.replaceState(null,'','#tool');
+  setTimeout(()=>{ const el=document.getElementById('tool');
+    if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },60); }
 </script>
 </body>
 </html>
