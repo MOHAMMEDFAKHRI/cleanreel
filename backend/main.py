@@ -455,6 +455,7 @@ def create_job(req: JobRequest, request: Request,
             params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
                                max(0.0, min(1.0, float(req.focus[1]))))
     job_id = manager.submit(req.mode, params)
+    print(f"[job] mode={req.mode} task={task} id={job_id}", flush=True)
     return {"job_id": job_id, "mode": req.mode, "task": task}
 
 
