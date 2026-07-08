@@ -204,11 +204,14 @@ class JobManager:
             return
         job.message = "Cleaning audio..."
         tmp = tempfile.mkdtemp()
+        # Stage the remuxed file NEXT TO the result (same filesystem): the
+        # storage dir is a separate mount from /tmp on Render, and os.replace
+        # cannot cross devices (EXDEV, "Invalid cross-device link").
+        swapped = job.result_path + ".audio.tmp.mp4"
         try:
             cleaned = wr.clean_audio_track(job.result_path, tmp)
             if not cleaned:
                 return
-            swapped = os.path.join(tmp, "swapped.mp4")
             wr.mux_audio(job.result_path, job.result_path, swapped, audio=cleaned)
             if os.path.isfile(swapped) and os.path.getsize(swapped) > 0:
                 os.replace(swapped, job.result_path)
@@ -218,6 +221,11 @@ class JobManager:
             print(f"[audio] skipped ({e!r})", flush=True)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+            try:
+                if os.path.isfile(swapped):
+                    os.remove(swapped)       # never leave a stray staging file
+            except OSError:
+                pass
 
     def _make_before(self, job: Job, params: dict):
         """Emit a browser-safe H.264 '{job_id}_before.mp4' covering the SAME
