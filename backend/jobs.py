@@ -62,6 +62,32 @@ def _overlay_consistency(path, info, k=6, limit=None):
     return float(np.median(cs)) if cs else 0.0
 
 
+def _glyph_residual(path, cand_info, cand_mask, inp, B, protect, k=4, limit=None):
+    """Fraction of the KNOWN overlay structure (high-pass of B) that SURVIVES a
+    candidate's cleaning, median over k sampled frames. 0 = stamp gone, 1 = all
+    still there. Unlike each engine's own QC, this puts the reverse-blend and
+    straight-inpaint candidates on the SAME scale, so a dual pick can't prefer
+    a faded-but-legible ghost over a clean fill."""
+    m = cand_mask > 0
+    if B is None or m.sum() < 8:
+        return None
+    bg = B.mean(2).astype(np.float32)
+    u = (bg - cv2.GaussianBlur(bg, (0, 0), 6.0))[m]
+    nu = float(np.linalg.norm(u))
+    if nu < 1e-3:
+        return None
+    u /= nu
+    rs = []
+    for f in wr._sample_frames(path, k, limit):
+        cleaned = wr._clean_frame_static(
+            f.copy(), cand_info.get("B"), cand_info.get("meanf"),
+            cand_info.get("gain", 0.0), cand_mask, inp, protect)
+        before = abs(float((wr._hp_gray(f)[m] * u).sum()))
+        after = abs(float((wr._hp_gray(cleaned)[m] * u).sum()))
+        rs.append(after / (before + 1e-6))
+    return float(np.median(rs)) if rs else None
+
+
 @dataclass
 class Job:
     id: str
@@ -452,9 +478,42 @@ class JobManager:
                                                  protect=False, k=4, limit=qc_limit)
                         i2, m2, q2 = wr.autotune(video, info, mask, _inpainter(),
                                                  protect=True, k=4, limit=qc_limit)
-                        if q2["confidence"] > q1["confidence"] + dual_bias:
+                        # The two engines' confidences are NOT on a common scale
+                        # (soft = projection shrinkage, opaque = fill naturalness),
+                        # so a faded-but-legible ghost can outscore a clean fill.
+                        # Decisive tie-break: how much of the KNOWN overlay
+                        # structure survives each candidate's cleaning (0 = gone).
+                        g1 = g2 = None
+                        try:
+                            g1 = _glyph_residual(video, i1, m1, _inpainter(),
+                                                 info["B"], protect=False,
+                                                 k=4, limit=qc_limit)
+                            g2 = _glyph_residual(video, i2, m2, _inpainter(),
+                                                 info["B"], protect=True,
+                                                 k=4, limit=qc_limit)
+                            print(f"[dual] glyph residual opaque={g1:.3f} "
+                                  f"soft={g2:.3f}", flush=True)
+                        except Exception as e:
+                            print("[dual] glyph residual skipped:", e, flush=True)
+                        if g1 is not None and g2 is not None and abs(g1 - g2) > 0.08:
+                            pick_soft = g2 < g1
+                        else:
+                            pick_soft = q2["confidence"] > q1["confidence"] + dual_bias
+                        if pick_soft:
                             info, mask, qc, soft = i2, m2, q2, True
                         else:
+                            if g1 is not None:
+                                # q1's fill-naturalness score underrates a clean
+                                # erase on busy backgrounds; fold in the direct
+                                # "is the stamp gone" evidence so the user isn't
+                                # told a clean result may be dirty.
+                                q1 = dict(q1); q1["glyph_residual"] = round(g1, 3)
+                                rr = round(1.0 - min(1.0, g1), 3)
+                                q1["residual_reduction"] = max(q1["residual_reduction"], rr)
+                                q1["confidence"] = max(q1["confidence"],
+                                                       round(rr * (1.0 - q1["damage"]), 3))
+                                q1["ok"] = bool(q1["confidence"] >= 0.5
+                                                and q1["residual_reduction"] >= 0.4)
                             info, mask, qc, soft = i1, m1, q1, False
                         protect = soft
                     else:
