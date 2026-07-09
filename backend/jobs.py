@@ -401,13 +401,20 @@ class JobManager:
                 core = cv2.erode(mask, np.ones((13, 13), np.uint8))
                 if core.sum() < 16:
                     core = mask
-                if float(np.median(stdg[core > 0])) < 3.0:
+                stds = stdg[core > 0]
+                # "Static" here is looser than the median test below: opaque
+                # stamp glyphs never let the background through, but codec
+                # noise still gives them a temporal std of ~3-8 (measured on a
+                # CRF-27 clip: glyph median 3.2, p90 8.1, moving bg ~32).
+                frac_static = float((stds < 8.0).mean()) if stds.size else 0.0
+                if float(np.median(stds)) < 3.0:
                     info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
                 else:
                     info = wr.info_from_user_mask(video, mask, meanf, stdg)
                     mask = info["mask"]
                 soft = info.get("B") is not None
                 dual = False
+                dual_bias = 0.0   # extra confidence soft must beat to win a dual
                 if soft:
                     # Guard: high std alone can also mean a MOVING opaque object
                     # brushed without tracking. A true see-through overlay's
@@ -417,6 +424,20 @@ class JobManager:
                         soft = False                     # clearly a moving object
                     elif c < 0.32:
                         dual = True                      # ambiguous: let QC decide
+                    elif frac_static >= 0.10:
+                        # OPAQUE STAMP over a moving background (e.g. a burned-in
+                        # camcorder timestamp): the glyph pixels are temporally
+                        # STATIC while the background between them moves, so the
+                        # median-std test above reads "semi-transparent" and the
+                        # consistency check passes (the stamp recurs in every
+                        # frame). But reverse-blend cannot recover pixels an
+                        # opaque stamp fully covers — it leaves ghost text.
+                        # A meaningful static fraction inside the core is the
+                        # tell: score BOTH engines and keep the winner — and
+                        # since the residual metric is known to overrate
+                        # reverse-blend on ghost text, soft must win CLEARLY.
+                        dual = True
+                        dual_bias = 0.05
                 if not soft:
                     info = dict(type="erase", mask=mask, B=None, meanf=None, gain=0.0)
                 protect = soft   # reverse-blend keeps the detail under the band
@@ -431,7 +452,7 @@ class JobManager:
                                                  protect=False, k=4, limit=qc_limit)
                         i2, m2, q2 = wr.autotune(video, info, mask, _inpainter(),
                                                  protect=True, k=4, limit=qc_limit)
-                        if q2["confidence"] > q1["confidence"]:
+                        if q2["confidence"] > q1["confidence"] + dual_bias:
                             info, mask, qc, soft = i2, m2, q2, True
                         else:
                             info, mask, qc, soft = i1, m1, q1, False
