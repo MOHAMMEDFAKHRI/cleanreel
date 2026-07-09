@@ -460,7 +460,10 @@ class JobManager:
                         soft = False                     # clearly a moving object
                     elif c < 0.32:
                         dual = True                      # ambiguous: let QC decide
-                    elif frac_static >= 0.10:
+                    elif frac_static >= 0.06:   # generous-brush margins dilute
+                        # the static fraction (a hand-drawn box is rarely tight
+                        # around the stamp), so trigger the dual scoring early —
+                        # a false trigger only costs a few seconds of scoring.
                         # OPAQUE STAMP over a moving background (e.g. a burned-in
                         # camcorder timestamp): the glyph pixels are temporally
                         # STATIC while the background between them moves, so the

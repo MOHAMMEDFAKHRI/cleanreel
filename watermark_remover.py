@@ -1499,14 +1499,26 @@ def _clean_frame_static(f, B, meanf, gain, mask_bin, inp, protect=True):
     return _inpaint_smart(inp, f, eff)
 
 def _sample_frames(path, k=4, limit=None):
-    """Up to k frames spread evenly across the clip (or the first `limit` frames)."""
-    frames = list(frames_iter(path, limit))
-    if not frames:
-        return []
-    if len(frames) <= k:
-        return frames
-    idx = np.linspace(0, len(frames) - 1, k).round().astype(int)
-    return [frames[i] for i in idx]
+    """Up to k frames spread evenly across the clip (or the first `limit`
+    frames) — STREAMED: only the k chosen frames are ever held in memory.
+    (`list(frames_iter(...))` used to buffer ~120 full-res frames per QC
+    call, ~750 MB at 1080p; back-to-back QC passes OOM-killed the 2 GB box.)"""
+    cap = cv2.VideoCapture(path)
+    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    cap.release()
+    if limit is not None:
+        n = min(n, int(limit))
+    if n <= 0:
+        # container reports no frame count: fall back to the first k frames
+        return [f for f in frames_iter(path, k)]
+    idx = set(np.linspace(0, n - 1, min(k, n)).round().astype(int).tolist())
+    out = []
+    for i, f in enumerate(frames_iter(path, limit)):
+        if i in idx:
+            out.append(f)
+            if len(out) >= len(idx):
+                break
+    return out
 
 def _score_clean(orig, cleaned, mask_bin, B):
     """Return (residual_reduction, damage) for one before/after frame pair.
