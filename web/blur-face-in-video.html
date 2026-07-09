@@ -12,6 +12,7 @@
 <meta property="og:description" content="Auto-detect and blur every face or license plate across your video — for privacy, compliance, and safe sharing. Neural face detection, free preview."/>
 <meta property="og:url" content="https://cleanreel.app/blur-face-in-video"/>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Will it catch every face?", "acceptedAnswer": {"@type": "Answer", "text": "Detection is neural (profile and tilted faces included) and held across brief misses — and you can brush any missed spot manually, which gets blurred too."}}, {"@type": "Question", "name": "Blur or pixelate — which is safer?", "acceptedAnswer": {"@type": "Answer", "text": "Both are rendered at strengths designed to be unrecoverable; pixelate reads as more deliberate redaction in formal contexts."}}, {"@type": "Question", "name": "Is the original kept on your servers?", "acceptedAnswer": {"@type": "Answer", "text": "Uploads and results auto-delete within about 6 hours."}}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoObject","name":"How to blur faces in a video","description":"Upload a video you own, auto-detect faces and plates, preview free, and export the blurred clip with CleanReel.","thumbnailUrl":"https://cleanreel.app/demos/demo-blur-faces-poster.jpg","contentUrl":"https://cleanreel.app/demos/demo-blur-faces.mp4","uploadDate":"2026-07-09","duration":"PT27S"}</script>
 <style>
 :root{--bg:#0b0e1a;--card:#151a33;--line:#252b4d;--ink:#eef1fb;--mut:#9aa2c0;
 --acc:#7c5cff;--acc2:#b45cff}
@@ -46,6 +47,17 @@ footer{color:#6b7396;font-size:13px;padding:34px 0;border-top:1px solid var(--li
   <h1>Blur faces &amp; plates in <em>your</em> video</h1>
   <p>Publishing training footage, dashcam clips, or street interviews? CleanReel finds faces and plates with neural detection, tracks them across frames, and blurs or pixelates them steadily — no flicker.</p>
   <p><a class="btn" href="/#tool=blur">Open the studio — free preview</a></p>
+
+  <div class="card" style="padding:10px">
+    <video autoplay muted loop playsinline
+           poster="/demos/demo-blur-faces-poster.jpg"
+           style="width:100%;height:auto;display:block;border-radius:10px"
+           aria-label="Demo: auto-detecting and blurring faces in a video with CleanReel">
+      <source src="/demos/demo-blur-faces.webm" type="video/webm"/>
+      <source src="/demos/demo-blur-faces.mp4" type="video/mp4"/>
+    </video>
+    <p style="margin:10px 6px 2px;font-size:13px">Real capture: detection finds every face, then the tracked blur holds steady through the before / after.</p>
+  </div>
 
   <div class="card trust"><p><b style="color:var(--ink)">For content you own.</b>
   Only upload videos you own or are <a href="/terms.html">licensed to edit</a>.

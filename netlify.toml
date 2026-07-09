@@ -25,3 +25,9 @@
   for = "/*.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# SEO demo loops: content-stable media, cache hard (replaced by new filenames if recut).
+[[headers]]
+  for = "/demos/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
