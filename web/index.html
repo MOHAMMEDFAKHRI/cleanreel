@@ -486,6 +486,7 @@ async function handleHash(){
   }
 }
 handleHash(); refreshMe();
+window.addEventListener("hashchange", handleHash);   // same-page deep links (demo cards' "try it")
 
 /* ---------- canvas editor ---------- */
 const refC=$("refCanvas"), maskC=$("maskCanvas");
