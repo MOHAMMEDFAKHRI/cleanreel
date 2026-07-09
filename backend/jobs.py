@@ -62,13 +62,23 @@ def _overlay_consistency(path, info, k=6, limit=None):
     return float(np.median(cs)) if cs else 0.0
 
 
-def _glyph_residual(path, cand_info, cand_mask, inp, B, protect, k=4, limit=None):
+def _glyph_residual(path, cand_info, cand_mask, inp, B, protect, stdg=None,
+                    k=4, limit=None):
     """Fraction of the KNOWN overlay structure (high-pass of B) that SURVIVES a
     candidate's cleaning, median over k sampled frames. 0 = stamp gone, 1 = all
     still there. Unlike each engine's own QC, this puts the reverse-blend and
     straight-inpaint candidates on the SAME scale, so a dual pick can't prefer
-    a faded-but-legible ghost over a clean fill."""
+    a faded-but-legible ghost over a clean fill.
+
+    The support is restricted to the STAMP'S OWN pixels (temporally static,
+    std < 8): B's high-pass also contains legitimate static background
+    structure (tile joints, kerb lines) that a GOOD inpaint faithfully
+    reconstructs — measuring there would punish correct reconstruction.
+    Occluding glyphs stay constant while passing shadows modulate everything
+    else, so low-std-under-motion is exactly the stamp support."""
     m = cand_mask > 0
+    if stdg is not None:
+        m = m & (stdg < 8.0)
     if B is None or m.sum() < 8:
         return None
     bg = B.mean(2).astype(np.float32)
@@ -487,10 +497,10 @@ class JobManager:
                         try:
                             g1 = _glyph_residual(video, i1, m1, _inpainter(),
                                                  info["B"], protect=False,
-                                                 k=4, limit=qc_limit)
+                                                 stdg=stdg, k=4, limit=qc_limit)
                             g2 = _glyph_residual(video, i2, m2, _inpainter(),
                                                  info["B"], protect=True,
-                                                 k=4, limit=qc_limit)
+                                                 stdg=stdg, k=4, limit=qc_limit)
                             print(f"[dual] glyph residual opaque={g1:.3f} "
                                   f"soft={g2:.3f}", flush=True)
                         except Exception as e:
