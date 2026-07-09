@@ -273,6 +273,36 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
     </div>
   </section>
 
+  <h2 class="sec" id="demos">See it work</h2>
+  <p style="color:var(--mut);margin:0 0 14px">Real captures from the studio — no mockups. Tap to play, then try the same mode on your own clip.</p>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoObject","name":"How to reframe a horizontal video to vertical","description":"Upload a video you own, let the subject tracker follow the action, and export a 9:16 vertical crop with CleanReel.","thumbnailUrl":"https://cleanreel.app/demos/demo-reframe-vertical-poster.jpg","contentUrl":"https://cleanreel.app/demos/demo-reframe-vertical.mp4","uploadDate":"2026-07-09","duration":"PT26S"}</script>
+  <div class="feat" id="demoGrid">
+    <div class="card"><h3>💧 Remove watermark</h3>
+      <video controls preload="none" poster="/demos/demo-remove-watermark-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: removing a watermark from a video">
+        <source src="/demos/demo-remove-watermark.webm" type="video/webm"/><source src="/demos/demo-remove-watermark.mp4" type="video/mp4"/></video>
+      <p>Auto-detected, neurally inpainted — <a href="/#tool=remove">try it →</a></p></div>
+    <div class="card"><h3>🖌 Erase objects</h3>
+      <video controls preload="none" poster="/demos/demo-erase-object-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: erasing an object from a video">
+        <source src="/demos/demo-erase-object.webm" type="video/webm"/><source src="/demos/demo-erase-object.mp4" type="video/mp4"/></video>
+      <p>Brush it, track it, gone — <a href="/#tool=erase">try it →</a></p></div>
+    <div class="card"><h3>✨ Enhance</h3>
+      <video controls preload="none" poster="/demos/demo-video-enhancer-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: enhancing and upscaling a compressed video">
+        <source src="/demos/demo-video-enhancer.webm" type="video/webm"/><source src="/demos/demo-video-enhancer.mp4" type="video/mp4"/></video>
+      <p>Neural restore + 2× upscale — <a href="/#tool=enhance">try it →</a></p></div>
+    <div class="card"><h3>📱 Reframe</h3>
+      <video controls preload="none" poster="/demos/demo-reframe-vertical-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: reframing a horizontal video to vertical">
+        <source src="/demos/demo-reframe-vertical.webm" type="video/webm"/><source src="/demos/demo-reframe-vertical.mp4" type="video/mp4"/></video>
+      <p>Subject-tracked 9:16 crop — <a href="/#tool=reframe">try it →</a></p></div>
+    <div class="card"><h3>🕶 Privacy blur</h3>
+      <video controls preload="none" poster="/demos/demo-blur-faces-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: auto-detecting and blurring faces in a video">
+        <source src="/demos/demo-blur-faces.webm" type="video/webm"/><source src="/demos/demo-blur-faces.mp4" type="video/mp4"/></video>
+      <p>Faces &amp; plates, tracked steady — <a href="/#tool=blur">try it →</a></p></div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+      <h3>Your clip next</h3>
+      <p style="margin-bottom:12px">Free preview on every mode — see your result before spending a credit.</p>
+      <a class="btn" href="#tool">Open the studio →</a></div>
+  </div>
+
   <h2 class="sec" id="how">How it works</h2>
   <div class="steps">
     <div class="card"><b>Upload &amp; pick a mode</b><p style="color:var(--mut)">Remove a watermark, erase any object, enhance &amp; upscale, or reframe to a new shape.</p></div>
