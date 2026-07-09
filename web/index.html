@@ -446,6 +446,12 @@ async function handleHash(){
       else $("acctInfo").textContent='That sign-in link is invalid or expired — request a new one.';
     }catch(e){}
   } else if(h==='#paid'){ history.replaceState(null,'','#tool'); await refreshMe(); $("acctInfo").innerHTML+=' <b>— thanks, credits added!</b>'; }
+  else if(h.startsWith('#tool=')){                 // deep link from SEO pages: /#tool=remove
+    const t=h.slice(6);
+    if(['remove','erase','enhance','reframe','blur'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
+    history.replaceState(null,'','#tool');
+    try{ document.getElementById('tool').scrollIntoView(); }catch(e){}
+  }
 }
 handleHash(); refreshMe();
 
