@@ -16,6 +16,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 PAGES = {
     "remove-watermark-from-video": dict(
         task="remove",
+        demo="demo-remove-watermark",
         title="Remove a Watermark from Video Online (Videos You Own) — CleanReel",
         h1="Remove a watermark from your video",
         desc="Remove your old watermarks from videos you own — AI inpainting fills the area "
@@ -46,6 +47,7 @@ PAGES = {
 
     "remove-logo-from-video": dict(
         task="remove",
+        demo="demo-remove-watermark",
         title="Remove a Logo from Video Online (Rebrands & Old Marks) — CleanReel",
         h1="Remove an old logo from your video",
         desc="Rebranded? Erase your old logo from existing videos instead of re-editing them. "
@@ -103,6 +105,7 @@ PAGES = {
 
     "remove-object-from-video": dict(
         task="erase",
+        demo="demo-erase-object",
         title="Remove Objects or People from Video Online — CleanReel",
         h1="Erase objects from your video",
         desc="Remove photobombers, trash, cables, or any distraction from videos you own. "
@@ -131,6 +134,7 @@ PAGES = {
 
     "blur-face-in-video": dict(
         task="blur",
+        demo="demo-blur-faces",
         title="Blur Faces & License Plates in Video (Privacy) — CleanReel",
         h1="Blur faces &amp; plates in your video",
         desc="Auto-detect and blur every face or license plate across your video — for privacy, "
@@ -159,6 +163,7 @@ PAGES = {
 
     "video-enhancer": dict(
         task="enhance",
+        demo="demo-video-enhancer",
         title="AI Video Enhancer — Sharpen, Denoise & Upscale Online — CleanReel",
         h1="Enhance &amp; upscale your video",
         desc="True neural enhancement: Real-ESRGAN restoration, face restore, denoise and 2× "
@@ -237,6 +242,7 @@ TEMPLATE = """<!doctype html>
   <h1>{h1_html}</h1>
   <p>{intro}</p>
   <p><a class="btn" href="/#tool={task}">Open the studio — free preview</a></p>
+{demo_html}
 
   <div class="card trust"><p><b style="color:var(--ink)">For content you own.</b>
   Only upload videos you own or are <a href="/terms.html">licensed to edit</a>.
@@ -276,6 +282,80 @@ TEMPLATE = """<!doctype html>
 
 NICE = {s: p["h1"].replace("&amp;", "&") for s, p in PAGES.items()}
 
+# Demo clip metadata (assets in web/demos/: {slug}.mp4 + .webm + -poster.jpg).
+# blur-faces and video-enhancer text mirrors the hand-made live pages verbatim.
+DEMOS = {
+    "demo-remove-watermark": dict(
+        name="How to remove a watermark from a video",
+        desc="Upload a video you own, auto-detect the watermark, preview free, and "
+             "export the cleaned clip with CleanReel.",
+        aria="removing a watermark from a video with CleanReel",
+        caption="Real capture: auto-detect finds the mark and neural inpainting "
+                "rebuilds the background — sweep the before / after.",
+        duration="PT24S"),
+    "demo-erase-object": dict(
+        name="How to erase an object from a video",
+        desc="Brush over an object in a video you own, preview the AI removal free, "
+             "and export the cleaned clip with CleanReel.",
+        aria="erasing an object from a video with CleanReel",
+        caption="Real capture: brush the object, tracking follows it through the "
+                "shot, and the fill stays clean — sweep the before / after.",
+        duration="PT27S"),
+    "demo-blur-faces": dict(
+        name="How to blur faces in a video",
+        desc="Upload a video you own, auto-detect faces and plates, preview free, "
+             "and export the blurred clip with CleanReel.",
+        aria="auto-detecting and blurring faces in a video with CleanReel",
+        caption="Real capture: detection finds every face, then the tracked blur "
+                "holds steady through the before / after.",
+        duration="PT27S"),
+    "demo-video-enhancer": dict(
+        name="How to enhance and upscale a video",
+        desc="Upload a soft or compressed video you own, run neural restoration "
+             "with 2x upscale, preview free, and export with CleanReel.",
+        aria="enhancing and upscaling a compressed video with CleanReel",
+        caption="Real capture: a 360p compressed clip through neural restore + 2× "
+                "upscale — sweep the before / after.",
+        duration="PT26S"),
+    "demo-reframe-vertical": dict(
+        name="How to reframe a horizontal video to vertical",
+        desc="Upload a video you own, let the subject tracker follow the action, "
+             "and export a 9:16 vertical crop with CleanReel.",
+        aria="reframing a horizontal video to vertical with CleanReel",
+        caption="Real capture: the subject tracker keeps the crop centered as the "
+                "clip reframes to 9:16.",
+        duration="PT26S"),
+}
+
+
+def demo_block(demo):
+    """The gradient-border demo card + VideoObject schema (matches the style of
+    the hand-made live pages). Empty string when a page has no demo."""
+    if not demo:
+        return ""
+    d = DEMOS[demo]
+    schema = json.dumps({
+        "@context": "https://schema.org", "@type": "VideoObject",
+        "name": d["name"], "description": d["desc"],
+        "thumbnailUrl": f"{SITE}/demos/{demo}-poster.jpg",
+        "contentUrl": f"{SITE}/demos/{demo}.mp4",
+        "uploadDate": "2026-07-09", "duration": d["duration"]}, ensure_ascii=False)
+    return (
+        f'<script type="application/ld+json">{schema}</script>\n'
+        f'  <div class="card" style="padding:10px;border:2px solid transparent;border-radius:16px;'
+        f'background:linear-gradient(var(--card),var(--card)) padding-box,'
+        f'linear-gradient(90deg,var(--acc),var(--acc2)) border-box;'
+        f'box-shadow:0 6px 28px rgba(124,92,255,.28)">\n'
+        f'    <video autoplay muted loop playsinline\n'
+        f'           poster="/demos/{demo}-poster.jpg"\n'
+        f'           style="width:100%;height:auto;display:block;border-radius:10px"\n'
+        f'           aria-label="Demo: {html.escape(d["aria"])}">\n'
+        f'      <source src="/demos/{demo}.webm" type="video/webm"/>\n'
+        f'      <source src="/demos/{demo}.mp4" type="video/mp4"/>\n'
+        f'    </video>\n'
+        f'    <p style="margin:10px 6px 2px;font-size:13px">{html.escape(d["caption"])}</p>\n'
+        f'  </div>')
+
 
 def build(slug, p):
     faq_schema = json.dumps({
@@ -289,7 +369,7 @@ def build(slug, p):
     related = " ".join(f'<a href="/{r}">{html.escape(NICE[r])}</a>' for r in p["related"])
     return TEMPLATE.format(
         title=html.escape(p["title"]), desc=html.escape(p["desc"]), site=SITE, slug=slug,
-        task=p["task"],
+        task=p["task"], demo_html=demo_block(p.get("demo")),
         faq_schema=faq_schema, css=CSS,
         h1_html=p["h1"].replace("your", "<em>your</em>", 1),
         intro=html.escape(p["intro"]),

@@ -12,7 +12,6 @@
 <meta property="og:description" content="Remove photobombers, trash, cables, or any distraction from videos you own. Neural inpainting with motion tracking. Free preview first."/>
 <meta property="og:url" content="https://cleanreel.app/remove-object-from-video"/>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Can it remove a person from someone else's video?", "acceptedAnswer": {"@type": "Answer", "text": "CleanReel only accepts content you own or are licensed to edit — and consider privacy laws in your region when editing people out of footage."}}, {"@type": "Question", "name": "How large an object can it handle?", "acceptedAnswer": {"@type": "Answer", "text": "Small-to-medium regions inpaint best. Very large regions may show artifacts — the free preview and quality score show you before you pay."}}, {"@type": "Question", "name": "Moving objects?", "acceptedAnswer": {"@type": "Answer", "text": "Yes — enable tracking and the marked region follows the object across frames."}}]}</script>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoObject","name":"How to erase an object from a video","description":"Upload a video you own, brush over the object, preview free, and export the cleaned clip with CleanReel.","thumbnailUrl":"https://cleanreel.app/demos/demo-erase-object-poster.jpg","contentUrl":"https://cleanreel.app/demos/demo-erase-object.mp4","uploadDate":"2026-07-09","duration":"PT27S"}</script>
 <style>
 :root{--bg:#0b0e1a;--card:#151a33;--line:#252b4d;--ink:#eef1fb;--mut:#9aa2c0;
 --acc:#7c5cff;--acc2:#b45cff}
@@ -47,16 +46,16 @@ footer{color:#6b7396;font-size:13px;padding:34px 0;border-top:1px solid var(--li
   <h1>Erase objects from <em>your</em> video</h1>
   <p>A stray trash can, a boom mic dipping into frame, a passer-by in your shot — brush over it and CleanReel erases it across the clip, tracking movement and rebuilding the background.</p>
   <p><a class="btn" href="/#tool=erase">Open the studio — free preview</a></p>
-
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "VideoObject", "name": "How to erase an object from a video", "description": "Brush over an object in a video you own, preview the AI removal free, and export the cleaned clip with CleanReel.", "thumbnailUrl": "https://cleanreel.app/demos/demo-erase-object-poster.jpg", "contentUrl": "https://cleanreel.app/demos/demo-erase-object.mp4", "uploadDate": "2026-07-09", "duration": "PT27S"}</script>
   <div class="card" style="padding:10px;border:2px solid transparent;border-radius:16px;background:linear-gradient(var(--card),var(--card)) padding-box,linear-gradient(90deg,var(--acc),var(--acc2)) border-box;box-shadow:0 6px 28px rgba(124,92,255,.28)">
     <video autoplay muted loop playsinline
            poster="/demos/demo-erase-object-poster.jpg"
            style="width:100%;height:auto;display:block;border-radius:10px"
-           aria-label="Demo: erasing a burned-in timestamp from a video with CleanReel">
+           aria-label="Demo: erasing an object from a video with CleanReel">
       <source src="/demos/demo-erase-object.webm" type="video/webm"/>
       <source src="/demos/demo-erase-object.mp4" type="video/mp4"/>
     </video>
-    <p style="margin:10px 6px 2px;font-size:13px">Real capture: brush the object, the engine scores both erase methods, then sweep the before / after.</p>
+    <p style="margin:10px 6px 2px;font-size:13px">Real capture: brush the object, tracking follows it through the shot, and the fill stays clean — sweep the before / after.</p>
   </div>
 
   <div class="card trust"><p><b style="color:var(--ink)">For content you own.</b>
