@@ -134,7 +134,9 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
     <p>Remove your old logos, watermarks and overlays, erase objects, enhance quality, blur
        faces &amp; plates, or reframe for TikTok, Reels and Shorts — faces stay sharp, audio is
        kept, uploads auto-delete. Free preview before you pay.</p>
-    <a class="btn" href="#tool">Open the studio →</a>
+    <!-- Not a plain scroll anchor (the studio is right below): this also opens
+         the file picker, so the first click already starts the workflow. -->
+    <a class="btn" href="#tool" onclick="try{document.getElementById('file').click()}catch(e){}">Upload a video →</a>
   </section>
 
   <section id="tool" class="card">
