@@ -76,6 +76,13 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
   .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:14px 0}
   @media(max-width:760px){.feat{grid-template-columns:1fr}}
   .feat .card h3{margin:.1em 0 .3em;font-size:17px} .feat .card p{color:var(--mut);margin:0;font-size:15px}
+  .ba{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:4/5;--p:50%;touch-action:none;cursor:ew-resize;margin:4px 0 10px;user-select:none}
+  .ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+  .ba .ba-b{clip-path:inset(0 calc(100% - var(--p)) 0 0)}
+  .ba .ba-h{position:absolute;top:0;bottom:0;left:var(--p);width:2px;background:#fff;box-shadow:0 0 10px rgba(0,0,0,.6);transform:translateX(-1px)}
+  .ba .ba-h::after{content:"⇔";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:#fff;color:#0b0e1a;font-size:15px;line-height:30px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+  .ba .ba-t{position:absolute;bottom:8px;font-style:normal;text-decoration:none;font-size:11px;font-weight:700;letter-spacing:.4px;background:rgba(11,14,26,.72);color:var(--ink);padding:2px 9px;border-radius:20px}
+  .ba .bl{left:8px}.ba .br{right:8px}
   h2.sec{font-size:26px;margin:38px 0 14px;text-align:center}
   .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
   @media(max-width:760px){.steps{grid-template-columns:1fr}}
@@ -274,28 +281,37 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
   </section>
 
   <h2 class="sec" id="demos">See it work</h2>
-  <p style="color:var(--mut);margin:0 0 14px">Real captures from the studio — no mockups. Tap to play, then try the same mode on your own clip.</p>
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoObject","name":"How to reframe a horizontal video to vertical","description":"Upload a video you own, let the subject tracker follow the action, and export a 9:16 vertical crop with CleanReel.","thumbnailUrl":"https://cleanreel.app/demos/demo-reframe-vertical-poster.jpg","contentUrl":"https://cleanreel.app/demos/demo-reframe-vertical.mp4","uploadDate":"2026-07-09","duration":"PT26S"}</script>
+  <p style="color:var(--mut);margin:0 0 14px">Real frames, real results — drag any slider to compare before and after.</p>
   <div class="feat" id="demoGrid">
     <div class="card"><h3>💧 Remove watermark</h3>
-      <video controls preload="none" poster="/demos/demo-remove-watermark-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: removing a watermark from a video">
-        <source src="/demos/demo-remove-watermark.webm" type="video/webm"/><source src="/demos/demo-remove-watermark.mp4" type="video/mp4"/></video>
+      <div class="ba" aria-label="Before and after: watermark removed from a video frame">
+        <img src="/demos/ba/remove-after.jpg" alt="Frame after watermark removal" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/remove-before.jpg" alt="Frame before, with tiled watermark" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
       <p>Auto-detected, neurally inpainted — <a href="/#tool=remove">try it →</a></p></div>
     <div class="card"><h3>🖌 Erase objects</h3>
-      <video controls preload="none" poster="/demos/demo-erase-object-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: erasing an object from a video">
-        <source src="/demos/demo-erase-object.webm" type="video/webm"/><source src="/demos/demo-erase-object.mp4" type="video/mp4"/></video>
+      <div class="ba" aria-label="Before and after: wall picture erased from a video frame">
+        <img src="/demos/ba/erase-after.jpg" alt="Frame after the object was erased" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/erase-before.jpg" alt="Frame before, object visible" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
       <p>Brush it, track it, gone — <a href="/#tool=erase">try it →</a></p></div>
     <div class="card"><h3>✨ Enhance</h3>
-      <video controls preload="none" poster="/demos/demo-video-enhancer-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: enhancing and upscaling a compressed video">
-        <source src="/demos/demo-video-enhancer.webm" type="video/webm"/><source src="/demos/demo-video-enhancer.mp4" type="video/mp4"/></video>
+      <div class="ba" aria-label="Before and after: compressed frame neurally restored">
+        <img src="/demos/ba/enhance-after.jpg" alt="Frame after neural enhancement" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/enhance-before.jpg" alt="Frame before, compressed and soft" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
       <p>Neural restore + 2× upscale — <a href="/#tool=enhance">try it →</a></p></div>
     <div class="card"><h3>📱 Reframe</h3>
-      <video controls preload="none" poster="/demos/demo-reframe-vertical-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: reframing a horizontal video to vertical">
-        <source src="/demos/demo-reframe-vertical.webm" type="video/webm"/><source src="/demos/demo-reframe-vertical.mp4" type="video/mp4"/></video>
-      <p>Subject-tracked 9:16 crop — <a href="/#tool=reframe">try it →</a></p></div>
+      <div class="ba" aria-label="Before and after: vertical clip reframed to square">
+        <img src="/demos/ba/reframe-after.jpg" alt="Clip reframed to a square crop" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/reframe-before.jpg" alt="Original vertical clip" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Subject-tracked crop, any ratio — <a href="/#tool=reframe">try it →</a></p></div>
     <div class="card"><h3>🕶 Privacy blur</h3>
-      <video controls preload="none" poster="/demos/demo-blur-faces-poster.jpg" style="width:100%;border-radius:10px" aria-label="Demo: auto-detecting and blurring faces in a video">
-        <source src="/demos/demo-blur-faces.webm" type="video/webm"/><source src="/demos/demo-blur-faces.mp4" type="video/mp4"/></video>
+      <div class="ba" aria-label="Before and after: face blurred for privacy">
+        <img src="/demos/ba/blur-after.jpg" alt="Frame after the face was blurred" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/blur-before.jpg" alt="Frame before, face visible" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
       <p>Faces &amp; plates, tracked steady — <a href="/#tool=blur">try it →</a></p></div>
     <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
       <h3>Your clip next</h3>
@@ -487,6 +503,24 @@ async function handleHash(){
 }
 handleHash(); refreshMe();
 window.addEventListener("hashchange", handleHash);   // same-page deep links (demo cards' "try it")
+
+/* before/after sliders: gentle auto-sweep until touched, then draggable */
+(()=>{
+  const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.ba').forEach((el,i)=>{
+    let auto=!still;
+    const t0=performance.now()+i*700;                 // stagger so the grid ripples
+    const set=v=>el.style.setProperty('--p',Math.max(3,Math.min(97,v))+'%');
+    if(auto) requestAnimationFrame(function loop(t){
+      if(!auto) return;
+      set(50+40*Math.sin((t-t0)/2600));               // slow sine sweep
+      requestAnimationFrame(loop);
+    });
+    const drag=e=>{const r=el.getBoundingClientRect(); set(100*(e.clientX-r.left)/r.width);};
+    el.addEventListener('pointerdown',e=>{auto=false; el.setPointerCapture(e.pointerId); drag(e);});
+    el.addEventListener('pointermove',e=>{if(e.buttons) drag(e);});
+  });
+})();
 
 /* ---------- canvas editor ---------- */
 const refC=$("refCanvas"), maskC=$("maskCanvas");
