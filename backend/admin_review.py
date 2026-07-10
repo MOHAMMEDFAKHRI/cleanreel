@@ -21,8 +21,12 @@ Env vars:
                           (default 0.75)
     WR_QC_RETAIN_MODE     'preview' (default) = never retain paid exports;
                           'all' = exports too
-    WR_QC_RETAIN_ALL      '1' = retain every finished job, not just flagged ones
-    WR_QC_RETAIN_MAX      max retained jobs; oldest evicted first (default 40)
+    WR_QC_RETAIN_ALL      retain EVERY preview, not just flagged ones (default
+                          '1' since 10 Jul 2026, owner decision; '0' = flagged
+                          only). Routine previews keep only the small rendered
+                          before/after pair; flagged jobs also keep the
+                          original upload.
+    WR_QC_RETAIN_MAX      max retained jobs; oldest evicted first (default 200)
 """
 from __future__ import annotations
 import os, json, time, shutil, hmac
@@ -33,8 +37,8 @@ ADMIN_TOKEN   = os.environ.get("WR_ADMIN_TOKEN", "").strip()
 RETAIN_HOURS  = float(os.environ.get("WR_QC_RETAIN_HOURS", "72"))
 RETAIN_CONF   = float(os.environ.get("WR_QC_RETAIN_CONF", "0.75"))
 RETAIN_MODE   = os.environ.get("WR_QC_RETAIN_MODE", "preview").lower()
-RETAIN_ALL    = os.environ.get("WR_QC_RETAIN_ALL", "0") == "1"
-RETAIN_MAX    = int(os.environ.get("WR_QC_RETAIN_MAX", "40"))
+RETAIN_ALL    = os.environ.get("WR_QC_RETAIN_ALL", "1") == "1"
+RETAIN_MAX    = int(os.environ.get("WR_QC_RETAIN_MAX", "200"))
 
 _manager = None          # set by attach() from main.py at startup
 _storage = None
@@ -75,22 +79,24 @@ def _check(token: str | None):
 # Recording + retention — called by jobs.JobManager._worker, strictly
 # best-effort: any exception is swallowed there and must never touch a job.
 # --------------------------------------------------------------------------- #
-def _should_retain(job, params) -> bool:
-    if RETAIN_HOURS <= 0:
-        return False
-    if job.mode == "export" and RETAIN_MODE != "all":
-        return False               # paid customers' full videos stay untouched
-    if RETAIN_ALL:
-        return True
+def _is_flagged(job, params) -> bool:
+    """A job worth a close look: errored, low QC confidence, or a remove/erase
+    where the scorer bailed. Other tasks (enhance, reframe, blur) never emit
+    QC, so a missing report there is normal, not a flag."""
     if job.status == "error":
         return True
     qc = job.qc or {}
     if qc:
         return float(qc.get("confidence", 0.0)) < RETAIN_CONF
-    # No QC at all on a task that normally produces one = the scorer bailed —
-    # exactly the kind of job worth a human look. Other tasks (enhance,
-    # reframe, blur) never emit QC; don't retain those unless flagged above.
     return params.get("task", "remove") in ("remove", "erase")
+
+
+def _should_retain(job, params) -> bool:
+    if RETAIN_HOURS <= 0:
+        return False
+    if job.mode == "export" and RETAIN_MODE != "all":
+        return False               # paid customers' full videos stay untouched
+    return RETAIN_ALL or _is_flagged(job, params)
 
 
 def record_job(job, params):
@@ -101,7 +107,11 @@ def record_job(job, params):
     os.makedirs(_admin_dir(), exist_ok=True)
     retained = False
     if _should_retain(job, params):
-        retained = _retain_media(job, params)
+        # Disk guard: with retain-all on, only FLAGGED jobs keep the original
+        # upload (can be up to 200 MB); routine previews keep just the small
+        # rendered before/after pair — which is what a quality review needs.
+        retained = _retain_media(job, params,
+                                 include_input=_is_flagged(job, params))
     rec = {
         "id": job.id, "mode": job.mode, "task": params.get("task", "remove"),
         "status": job.status, "created": job.created, "finished": time.time(),
@@ -113,11 +123,11 @@ def record_job(job, params):
         f.write(json.dumps(rec) + "\n")
 
 
-def _retain_media(job, params) -> bool:
+def _retain_media(job, params, include_input: bool = True) -> bool:
     dst = os.path.join(_retained_root(), job.id)
     try:
         os.makedirs(dst, exist_ok=True)
-        src_in = params.get("video_path")
+        src_in = params.get("video_path") if include_input else None
         if src_in and os.path.isfile(src_in):
             shutil.copy2(src_in, os.path.join(
                 dst, "input" + (os.path.splitext(src_in)[1] or ".mp4")))
