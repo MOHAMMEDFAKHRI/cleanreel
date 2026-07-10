@@ -75,6 +75,16 @@ class Inpainter:
         self.kind = "classical"
         self.lama = None
         self.remote = None
+        # Temporal (sequence) inpaint — ProPainter on Modal. Optional layer ON
+        # TOP of the per-frame backend below: process_video prefers it for
+        # chunked ROI fills; any failure falls back to the per-frame path.
+        self.seq_url = os.environ.get("WR_INPAINT_SEQ_URL", "").strip() or None
+        if self.seq_url:
+            import requests
+            self.seq_token = os.environ.get("WR_INPAINT_TOKEN", "")
+            self.seq_timeout = float(os.environ.get("WR_INPAINT_SEQ_TIMEOUT", "300"))
+            self._seq_sess = requests.Session()
+            print("[engine] temporal inpaint = propainter (GPU)", flush=True)
         url = os.environ.get("WR_INPAINT_URL", "").strip()
         if url:
             import requests                      # only needed in remote mode
@@ -134,6 +144,47 @@ class Inpainter:
                         raise RuntimeError("bad result png")
                     if o.shape[:2] != bgr.shape[:2]:
                         o = cv2.resize(o, (bgr.shape[1], bgr.shape[0]))
+                    res.append(o)
+                return res
+            except Exception as e:
+                last = e
+        raise last
+
+    def inpaint_sequence(self, frames, masks01):
+        """TEMPORAL inpaint: a fixed region across consecutive frames, filled
+        flow-consistently in ONE ProPainter GPU call. frames = BGR crops of the
+        SAME size; masks01 = uint8 {0,1} per frame. Returns inpainted crops in
+        order. RAISES on any failure — callers fall back to the per-frame path
+        (LaMa/classical), so a render never hard-fails."""
+        import base64
+        if not self.seq_url:
+            raise RuntimeError("no WR_INPAINT_SEQ_URL")
+        fr_b64, mk_b64 = [], []
+        for f, m in zip(frames, masks01):
+            okf, fb = cv2.imencode(".jpg", f, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+            okm, mb = cv2.imencode(".png", (m * 255).astype(np.uint8))
+            if not (okf and okm):
+                raise RuntimeError("sequence encode failed")
+            fr_b64.append(base64.b64encode(fb).decode())
+            mk_b64.append(base64.b64encode(mb).decode())
+        body = {"token": self.seq_token, "frames": fr_b64, "masks": mk_b64}
+        last = None
+        for _ in range(2):                       # one retry, like the crop path
+            try:
+                r = self._seq_sess.post(self.seq_url, json=body,
+                                        timeout=self.seq_timeout)
+                r.raise_for_status()
+                outs = r.json()["results"]
+                if len(outs) != len(frames):
+                    raise RuntimeError("result count mismatch")
+                res = []
+                for f, b64 in zip(frames, outs):
+                    arr = np.frombuffer(base64.b64decode(b64), np.uint8)
+                    o = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if o is None:
+                        raise RuntimeError("bad result frame")
+                    if o.shape[:2] != f.shape[:2]:
+                        o = cv2.resize(o, (f.shape[1], f.shape[0]))
                     res.append(o)
                 return res
             except Exception as e:
@@ -1418,14 +1469,54 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
     # in ONE request — that's the export speed-up (fewer round-trips). The local
     # classical/lama backends have no network to amortise, so they stream one frame
     # at a time (chunk = 1) to keep memory flat.
-    chunk = (int(os.environ.get("WR_INPAINT_BATCH", "12"))
-             if getattr(inp, "kind", "") == "modal" else 1)
+    if getattr(inp, "seq_url", None):
+        # temporal (ProPainter) mode wants LONGER chunks: more frames = more
+        # real pixels to propagate from = better, more consistent fills
+        chunk = int(os.environ.get("WR_INPAINT_SEQ_BATCH", "16"))
+    elif getattr(inp, "kind", "") == "modal":
+        chunk = int(os.environ.get("WR_INPAINT_BATCH", "12"))
+    else:
+        chunk = 1
     buf = []            # list of [frame, plan]  (plan from _inpaint_plan)
     written = 0
 
     def _flush():
         nonlocal written
         idxs = [i for i, (fr, pl) in enumerate(buf) if pl is not None]
+        # TEMPORAL path (ProPainter): union the chunk's ROIs into ONE fixed
+        # region and fill it flow-consistently across all frames — kills the
+        # per-frame shimmer. Needs >=2 localized ROIs; "full"-frame plans and
+        # any failure fall through to the per-frame path below.
+        if (idxs and getattr(inp, "seq_url", None) and len(idxs) >= 2
+                and getattr(inp, "_seq_fails", 0) < 2
+                and all(buf[i][1][0] != "full" for i in idxs)):
+            y0 = min(buf[i][1][0][0] for i in idxs)
+            y1 = max(buf[i][1][0][1] for i in idxs)
+            x0 = min(buf[i][1][0][2] for i in idxs)
+            x1 = max(buf[i][1][0][3] for i in idxs)
+            # union ~whole frame -> bandwidth/VRAM blow-up; use per-frame path
+            if (y1 - y0) * (x1 - x0) <= 0.6 * h * w:
+                try:
+                    frames = [buf[i][0][y0:y1, x0:x1] for i in idxs]
+                    masks = []
+                    for i in idxs:
+                        ry0, ry1, rx0, rx1 = buf[i][1][0]
+                        m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+                        m[ry0 - y0:ry1 - y0, rx0 - x0:rx1 - x0] = buf[i][1][2]
+                        masks.append(m)
+                    done = inp.inpaint_sequence(frames, masks)
+                    for j, i in enumerate(idxs):
+                        fr = buf[i][0].copy()
+                        fr[y0:y1, x0:x1] = done[j]
+                        buf[i][0] = fr
+                    inp._seq_fails = 0           # healthy again
+                    idxs = []                    # handled — skip per-frame path
+                except Exception as e:
+                    inp._seq_fails = getattr(inp, "_seq_fails", 0) + 1
+                    if not getattr(inp, "_seq_warned", False):
+                        print(f"[propainter] sequence inpaint failed ({e!r}); "
+                              "using per-frame backend", flush=True)
+                        inp._seq_warned = True
         if idxs:
             crops = [(buf[i][1][1], buf[i][1][2]) for i in idxs]     # (crop, cropmask)
             done = inp.inpaint_batch(crops)                          # one GPU call
