@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- CleanReel owner QC review panel. Served at /admin ONLY when WR_ADMIN_TOKEN
+     is set (see backend/admin_review.py). The token is kept in sessionStorage
+     and sent as a header; media loads via fetch->blob so the token never
+     appears in a URL. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<title>CleanReel — QC review</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.45 system-ui, sans-serif; background:#0e1116; color:#dbe2ea; margin:0; padding:24px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:#8a94a3; font-size:12px; margin-bottom:18px; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid #1e2530; font-size:13px; }
+  th { color:#8a94a3; font-weight:600; }
+  tr.row:hover { background:#161c26; cursor:pointer; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:9px; font-size:12px; }
+  .ok    { background:#123822; color:#5ad48a; }
+  .warn  { background:#3a2f12; color:#e5b454; }
+  .bad   { background:#3a1515; color:#f27d7d; }
+  .dim   { color:#66707e; }
+  .tag   { background:#1b2330; color:#9fb0c6; border-radius:4px; padding:1px 6px; font-size:11px; margin-left:6px; }
+  #viewer { margin:20px 0; padding:16px; background:#131820; border:1px solid #232c3a; border-radius:8px; display:none; }
+  #viewer h2 { font-size:14px; margin:0 0 10px; }
+  .vids { display:flex; gap:14px; flex-wrap:wrap; }
+  .vids figure { margin:0; }
+  .vids figcaption { font-size:12px; color:#8a94a3; margin-bottom:4px; }
+  video { max-width:340px; max-height:300px; background:#000; border-radius:6px; }
+  pre { background:#0b0e13; padding:10px; border-radius:6px; font-size:12px; overflow:auto; }
+  button { background:#1b2330; color:#dbe2ea; border:1px solid #2b3648; border-radius:6px; padding:5px 12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<h1>QC review</h1>
+<div class="sub" id="cfg">Internal quality review — retained media auto-deletes; see admin_review.py.</div>
+<div id="viewer">
+  <h2 id="vtitle"></h2>
+  <div class="vids" id="vids"></div>
+  <pre id="vqc"></pre>
+  <button onclick="document.getElementById('viewer').style.display='none'">Close</button>
+</div>
+<table>
+  <thead><tr><th>When</th><th>Job</th><th>Task</th><th>Mode</th><th>Status</th><th>Confidence</th><th>Media</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+const tok = sessionStorage.adm || (sessionStorage.adm = prompt('Admin token'));
+const H = { 'X-Admin-Token': tok };
+const $ = id => document.getElementById(id);
+
+function age(t){ const s=(Date.now()/1000-t); if(s<3600) return Math.round(s/60)+'m ago';
+  if(s<86400) return (s/3600).toFixed(1)+'h ago'; return (s/86400).toFixed(1)+'d ago'; }
+function confBadge(qc){ if(!qc || qc.confidence==null) return '<span class="dim">—</span>';
+  const c=qc.confidence, cls=c>=0.75?'ok':c>=0.5?'warn':'bad';
+  return `<span class="badge ${cls}">${Math.round(c*100)}%</span>`; }
+
+async function load(){
+  const r = await fetch('/api/admin/jobs', {headers:H});
+  if(!r.ok){ sessionStorage.removeItem('adm'); document.body.textContent='Nope.'; return; }
+  const d = await r.json();
+  $('cfg').textContent = `Retention: flagged jobs kept ${d.retain_hours}h (confidence < ${d.retain_conf}). `
+                       + `Media auto-deletes; close the loop in privacy policy before widening scope.`;
+  const seen = new Set(), rows = [];
+  for(const j of [...(d.live||[]).filter(x=>!x.in_history), ...(d.history||[])]){
+    if(seen.has(j.id)) continue; seen.add(j.id);
+    rows.push(j);
+  }
+  $('rows').innerHTML = rows.map(j=>`
+    <tr class="row" onclick='view(${JSON.stringify(JSON.stringify(j))})'>
+      <td>${age(j.created)}</td>
+      <td class="dim">${j.id.slice(0,8)}</td>
+      <td>${j.task||'?'}${j.clean_audio?'<span class="tag">audio</span>':''}</td>
+      <td>${j.mode}</td>
+      <td>${j.status==='error'?`<span class="badge bad">error</span>`:j.status}</td>
+      <td>${confBadge(j.qc)}</td>
+      <td>${j.retained?'<span class="tag">retained</span>':''}${j.live?'<span class="tag">live</span>':''}</td>
+    </tr>`).join('');
+}
+
+async function vid(job, kind){
+  const r = await fetch(`/api/admin/media/${job}/${kind}`, {headers:H});
+  if(!r.ok) return null;
+  return URL.createObjectURL(await r.blob());
+}
+
+async function view(js){
+  const j = JSON.parse(js);
+  $('vtitle').textContent = `${j.task||'?'} · ${j.mode} · ${j.id}` + (j.error?` — ${j.error}`:'');
+  $('vqc').textContent = j.qc ? JSON.stringify(j.qc, null, 2) : (j.message||'no QC data');
+  $('vids').innerHTML = '<span class="dim">loading media…</span>';
+  const kinds = [['before','Before'],['result','Result'],['input','Original upload']];
+  const parts = [];
+  for(const [k,label] of kinds){
+    const u = await vid(j.id, k);
+    if(u) parts.push(`<figure><figcaption>${label}</figcaption><video src="${u}" controls loop muted></video></figure>`);
+  }
+  $('vids').innerHTML = parts.join('') || '<span class="dim">media expired (past retention/6h window)</span>';
+  $('viewer').style.display = 'block';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+load();
+</script>
+</body>
+</html>

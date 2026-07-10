@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, asdict
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import watermark_remover as wr   # noqa: E402
 import accounts                  # noqa: E402  (auto-refund of credits on failed exports)
+import admin_review              # noqa: E402  (owner QC panel; inert unless WR_ADMIN_TOKEN is set)
 
 PREVIEW_SECONDS = 4
 MAX_EXPORT_SECONDS = 60          # single clip-length cap for this tier (upload == export)
@@ -180,6 +181,7 @@ class JobManager:
                 if removed:
                     print(f"[janitor] removed {removed} stored file(s) older than "
                           f"{STORAGE_TTL_HOURS:g}h", flush=True)
+                admin_review.sweep()   # retained-store TTL/cap; no-op when disabled
             except Exception as e:
                 print("[janitor] sweep skipped:", e, flush=True)
             time.sleep(STORAGE_SWEEP_SECONDS)
@@ -237,6 +239,12 @@ class JobManager:
                         print(f"[refund] FAILED to refund {email} for job "
                               f"{job_id}: {rerr}", flush=True)
             finally:
+                # Owner QC panel: log the finished/errored job and retain flagged
+                # media. Inert unless WR_ADMIN_TOKEN is set; never touches the job.
+                try:
+                    admin_review.record_job(job, params)
+                except Exception as aerr:
+                    print("[qcretain] record skipped:", aerr, flush=True)
                 self.q.task_done()
 
     def _clean_audio(self, job: Job, params: dict):

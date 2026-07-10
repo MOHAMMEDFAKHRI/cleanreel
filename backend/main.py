@@ -28,6 +28,7 @@ import numpy as np, base64
 from jobs import JobManager, MAX_EXPORT_SECONDS, PREVIEW_SECONDS
 import watermark_remover as wr   # jobs.py puts the engine dir on sys.path on import
 import accounts                  # users, magic-link auth, credit balances, packs
+import admin_review              # owner QC panel; every route 404s unless WR_ADMIN_TOKEN is set
 try:
     import stripe
 except Exception:
@@ -56,6 +57,20 @@ accounts.init_db()
 
 manager = JobManager(STORAGE)
 FILES: dict[str, dict] = {}      # file_id -> {path, w, h, seconds}
+
+# Owner QC review panel (see backend/admin_review.py). DARK BY DEFAULT: with
+# WR_ADMIN_TOKEN unset these routes all answer 404 and nothing is recorded.
+# PRIVACY: do not enable in production until web/privacy.html discloses
+# internal quality review — see the note at the top of admin_review.py.
+admin_review.attach(manager, STORAGE)
+app.include_router(admin_review.router)
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    if not admin_review.enabled():
+        raise HTTPException(404, "Not found.")
+    p = os.path.join(HERE, "static", "admin.html")
+    return HTMLResponse(open(p, encoding="utf-8").read())
 
 # --------------------------------------------------------------------------- #
 # Abuse guards — tiny, in-memory, single-process (matches the one-box deploy).
