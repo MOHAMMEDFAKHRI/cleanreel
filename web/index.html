@@ -148,10 +148,15 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
 
   <section id="tool" class="card">
     <div id="acct" class="acctbar">
-      <span id="acctInfo" class="pill">Previews are free. Sign in to export cleaned videos.</span>
+      <span id="acctInfo" class="pill">Sign in &amp; get <b>2 free export credits</b> — no card needed.</span>
       <span id="acctForm">
         <input id="email" type="email" placeholder="you@email.com" class="emailin"/>
         <button id="signin" class="tool">Email me a sign-in link</button>
+        <span id="codeWrap" style="display:none">
+          <input id="codeIn" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                 placeholder="6-digit code" class="emailin" style="width:110px" aria-label="6-digit sign-in code from the email"/>
+          <button id="codeGo" class="tool">Sign in with code</button>
+        </span>
       </span>
       <span id="acctUser" style="display:none">
         <button id="buy" class="tool">💳 Buy credits</button>
@@ -442,7 +447,7 @@ function renderAcct(){
   $("acctForm").style.display=inU?'none':'inline';
   $("acctUser").style.display=inU?'inline':'none';
   if(inU){ $("acctInfo").innerHTML=`Signed in as <b>${auth.email}</b> · <b>${auth.credits??'…'}</b> export credit(s)`; $("signinNudge").style.display='none'; }
-  else { $("acctInfo").textContent='Previews are free. Sign in to export cleaned videos.'; $("buyPanel").style.display='none'; }
+  else { $("acctInfo").innerHTML='Sign in &amp; get <b>2 free export credits</b> — no card needed.'; $("buyPanel").style.display='none'; }
 }
 async function refreshMe(){
   if(!auth){ renderAcct(); return; }
@@ -458,10 +463,24 @@ $("signin").onclick=async()=>{
     const d=await r.json();
     if(!r.ok) $("acctInfo").textContent='Error: '+(d.detail||'failed');
     else if(d.dev_link) $("acctInfo").innerHTML='Email isn\'t set up yet — <a href="'+d.dev_link+'">click here to sign in</a>.';
-    else $("acctInfo").textContent='✅ Check your email for a sign-in link.';
+    else{ $("acctInfo").textContent='✅ Email sent — tap the link, or type the 6-digit code here:';
+      $("codeWrap").style.display='inline'; $("codeIn").focus(); }
   }catch(e){ $("acctInfo").textContent='Network error.'; }
   $("signin").textContent='Email me a sign-in link';
 };
+$("codeGo").onclick=async()=>{
+  const email=$("email").value.trim(), code=$("codeIn").value.trim();
+  if(!email||code.length!==6){alert('Enter your email and the 6-digit code from it.');return;}
+  $("codeGo").textContent='Checking…';
+  try{ const r=await fetch(API+'/api/auth/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code})});
+    const d=await r.json();
+    if(r.ok){ saveAuth({session:d.session,email:d.email,credits:d.credits});
+      $("codeWrap").style.display='none'; track('signin_code',{}); }
+    else $("acctInfo").textContent='⚠ '+(d.detail||'Invalid code.');
+  }catch(e){ $("acctInfo").textContent='Network error.'; }
+  $("codeGo").textContent='Sign in with code';
+};
+$("codeIn").addEventListener('keydown',e=>{ if(e.key==='Enter') $("codeGo").click(); });
 $("signout").onclick=()=>saveAuth(null);
 $("buy").onclick=async()=>{
   const bp=$("buyPanel");
@@ -764,7 +783,7 @@ async function run(kind){
       }
       if(r.status===401){
         $("status").textContent="";
-        $("signinNudge").innerHTML='🔒 <b>Sign in to export</b> — it\'s free to start and previews stay free. Enter your email below and we\'ll send you a one-tap sign-in link.';
+        $("signinNudge").innerHTML='🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> No card needed: enter your email below and we\'ll send a one-tap sign-in link.';
         $("signinNudge").style.display='block';
         document.getElementById('acct').scrollIntoView({behavior:'smooth',block:'center'});
         const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}

@@ -45,6 +45,28 @@ def sign_token(email: str, purpose: str, ttl: int) -> str:
     sig = _b64e(hmac.new(APP_SECRET.encode(), raw.encode(), hashlib.sha256).digest())
     return f"{raw}.{sig}"
 
+def login_code(email: str, offset: int = 0) -> str:
+    """6-digit sign-in code for the magic-link email. HMAC-derived from the
+    email + a 5-minute time window — stateless, same trust anchor as the
+    tokens. Typing the code keeps sign-in in the ORIGINAL tab, which fixes the
+    in-app-browser case where the emailed link opens in a different browser
+    (and the user's upload/session isn't there)."""
+    email = email.lower().strip()
+    window = int(time.time() // 300) + offset
+    d = hmac.new(APP_SECRET.encode(), f"code|{email}|{window}".encode(),
+                 hashlib.sha256).digest()
+    return f"{int.from_bytes(d[:4], 'big') % 1_000_000:06d}"
+
+
+def verify_login_code(email: str, code: str) -> bool:
+    """Accepts the current and previous window (5-10 min validity, matching
+    the spirit of the 15-min link). Callers MUST rate-limit attempts."""
+    code = (code or "").strip()
+    if not code.isdigit() or len(code) != 6:
+        return False
+    return any(hmac.compare_digest(code, login_code(email, o)) for o in (0, -1))
+
+
 def verify_token(token: str, purpose: str) -> str | None:
     try:
         raw, sig = token.split(".", 1)
@@ -222,9 +244,14 @@ def send_magic_link(email: str) -> str | None:
     if not RESEND_KEY:
         print("[accounts] RESEND_API_KEY unset — magic link:", link)
         return link
+    code = login_code(email)
     html = (f'<p>Click to sign in to CleanReel:</p>'
             f'<p><a href="{link}">Sign in to CleanReel</a></p>'
-            f'<p>This link expires in 15 minutes. If you didn\'t request it, ignore this email.</p>')
+            f'<p>Reading this on a different device or the link opens the wrong '
+            f'browser? Just type this code on the CleanReel page instead:</p>'
+            f'<p style="font-size:24px;letter-spacing:4px"><b>{code}</b></p>'
+            f'<p>The link expires in 15 minutes, the code in ~10. '
+            f'If you didn\'t request this, ignore this email.</p>')
     payload = json.dumps({"from": MAIL_FROM, "to": [email],
                           "subject": "Your CleanReel sign-in link", "html": html}).encode()
     req = urllib.request.Request("https://api.resend.com/emails", data=payload,

@@ -133,6 +133,10 @@ class EmailReq(BaseModel):
 class TokenReq(BaseModel):
     token: str
 
+class CodeReq(BaseModel):
+    email: str
+    code: str
+
 class CheckoutReq(BaseModel):
     pack: str
 
@@ -145,6 +149,22 @@ def auth_request(req: EmailReq, request: Request):
         raise HTTPException(400, "Please enter a valid email address.")
     link = accounts.send_magic_link(email)          # returns link only if email unconfigured
     return {"sent": True, **({"dev_link": link} if link else {})}
+
+@app.post("/api/auth/code")
+def auth_code(req: CodeReq, request: Request):
+    """Exchange the 6-digit code from the sign-in email for a session — keeps
+    sign-in in the tab that holds the upload (in-app-browser fix). Attempts are
+    rate-limited hard: a 6-digit space must not be brute-forceable."""
+    rate_limit(request, "code", int(os.environ.get("RATE_CODE_PER_HOUR", "15")))
+    email = (req.email or "").strip().lower()
+    if "@" not in email or len(email) > 200:
+        raise HTTPException(400, "Please enter a valid email address.")
+    if not accounts.verify_login_code(email, req.code):
+        raise HTTPException(400, "That code is invalid or has expired — "
+                                 "request a fresh sign-in email.")
+    credits = accounts.ensure_user(email)
+    session = accounts.sign_token(email, "session", ttl=60 * 60 * 24 * 30)
+    return {"email": email, "credits": credits, "session": session}
 
 @app.post("/api/auth/verify")
 def auth_verify(req: TokenReq):
