@@ -190,6 +190,304 @@ PAGES = {
               "Face restore is tuned conservatively; check the free preview and dial sharpening "
               "down if you prefer a softer look.")],
         related=["remove-watermark-from-video", "blur-face-in-video", "remove-logo-from-video"]),
+
+    "remove-subtitles-from-video": dict(
+        task="remove",
+        title="Remove Hard-Coded Subtitles from Video Online — CleanReel",
+        h1="Remove burned-in subtitles from your video",
+        desc="Strip hard-coded subtitles from videos you own so you can re-caption, translate, "
+             "or repost clean. AI inpainting rebuilds the background. Free preview.",
+        intro="Subtitles burned into the pixels can't be switched off — but they can be removed. "
+              "CleanReel erases hard-coded subs from footage you own and reconstructs what's "
+              "behind them, so you can re-caption in a new language or style.",
+        use_cases=["Your own clips subtitled in the wrong language",
+                   "Old caption styles you want to refresh",
+                   "Re-captioning content for a new market",
+                   "Cleaning subs off footage before a re-edit"],
+        steps=["Upload the subtitled clip you own (up to 60s / 200 MB)",
+               "Brush across the subtitle band — or auto-detect it",
+               "Preview the clean result free",
+               "Optional: switch to Captions mode to re-caption it automatically",
+               "Export in full quality with original audio"],
+        faq=[("Can I remove subtitles from a show or movie?",
+              "No — CleanReel only accepts content you own or are licensed to edit, like your "
+              "own productions or licensed client work."),
+             ("What goes in place of the subtitles?",
+              "Neural inpainting reconstructs the background behind the text — no blur bar, "
+              "no crop, and a quality score shows how clean the result is."),
+             ("Can CleanReel add new captions afterwards?",
+              "Yes — the Captions mode transcribes the speech with AI and burns in fresh, "
+              "styled captions, plus a free .srt download.")],
+        related=["remove-text-from-video", "add-captions-to-video", "auto-subtitle-generator"]),
+
+    "remove-person-from-video": dict(
+        task="erase",
+        demo="demo-erase-object",
+        title="Remove a Person from Video Online (Videos You Own) — CleanReel",
+        h1="Remove a person from your video",
+        desc="Erase a photobomber or bystander from footage you own — brush, track, and let "
+             "neural inpainting rebuild the scene. Free preview first.",
+        intro="A stranger wandered through your shot, or someone asked to be edited out — "
+              "brush over them and CleanReel erases them across the clip, tracking their "
+              "movement and rebuilding the background behind them.",
+        use_cases=["Photobombers in travel and event footage",
+                   "Bystanders who asked not to appear",
+                   "Crew members caught in the frame",
+                   "Ex-members of a lineup in your own promo shots"],
+        steps=["Upload the video you own",
+               "Brush over the person to remove",
+               "Tick tracking so the mask follows them",
+               "Preview free and refine the mask",
+               "Export the cleaned full clip"],
+        faq=[("Is it legal to remove a person from a video?",
+              "For your own footage it's generally your call — though privacy and publicity "
+              "laws vary, and CleanReel only accepts content you own or are licensed to edit."),
+             ("The person walks across the whole frame — will it work?",
+              "Tracking follows the marked region, and temporal inpainting keeps the fill "
+              "consistent between frames. Fast, erratic movement is harder — the free preview "
+              "shows you before you pay."),
+             ("What about just blurring them instead?",
+              "Often the better choice — Privacy blur finds and blurs faces automatically, "
+              "and reads as deliberate redaction rather than an edit.")],
+        related=["remove-object-from-video", "blur-face-in-video", "remove-text-from-video"]),
+
+    "blur-license-plate-in-video": dict(
+        task="blur",
+        demo="demo-blur-faces",
+        title="Blur License Plates in Video Online (Dashcam & Street) — CleanReel",
+        h1="Blur license plates in your video",
+        desc="Auto-detect and blur license plates across dashcam, driving, and street footage "
+             "you own. Tracked and steady, no flicker. Free preview.",
+        intro="Posting dashcam or driving footage? CleanReel detects license plates, tracks "
+              "them through the clip, and blurs or pixelates them steadily — so plates stay "
+              "unreadable in every frame, not just the ones you checked.",
+        use_cases=["Dashcam clips before posting or sharing",
+                   "Incident footage sent to insurers or platforms",
+                   "Street and car-spotting content",
+                   "Real-estate and drone footage with parked cars"],
+        steps=["Upload your clip",
+               "Tick license plates (and faces, if people appear)",
+               "Choose blur or pixelate and set the strength",
+               "Preview free — detection is tracked and smoothed",
+               "Export the redacted full video"],
+        faq=[("Does it catch plates at an angle or in motion?",
+              "Detection runs on every frame and is held across brief misses; anything it "
+              "skips you can brush manually and it's blurred too."),
+             ("Is a blurred plate really unreadable?",
+              "Strengths are tuned to be unrecoverable — pixelate at high strength is the "
+              "most conservative choice for compliance contexts."),
+             ("Do you keep my footage?",
+              "Uploads and results auto-delete within about 6 hours.")],
+        related=["blur-face-in-video", "remove-object-from-video", "remove-person-from-video"]),
+
+    "video-upscaler": dict(
+        task="enhance",
+        demo="demo-video-enhancer",
+        title="AI Video Upscaler — 2× Resolution Online — CleanReel",
+        h1="Upscale your video with AI",
+        desc="Neurally upscale videos you own to 2× resolution — Real-ESRGAN restoration "
+             "recovers detail instead of stretching pixels. Free preview.",
+        intro="Stretching a small video just makes it blurry at a bigger size. CleanReel's "
+              "upscaler runs every frame through Real-ESRGAN neural restoration, rebuilding "
+              "texture and edges while doubling the resolution — faces get their own "
+              "restoration model.",
+        use_cases=["Old 480p/720p clips headed for modern feeds",
+                   "Zoomed or cropped footage that lost resolution",
+                   "Compressed downloads of your own published work",
+                   "Phone clips destined for larger screens"],
+        steps=["Upload the video you own",
+               "Pick 2× upscale (or 1× restore-only)",
+               "Toggle denoise/deblock for compressed sources",
+               "Preview the result free",
+               "Export the upscaled full clip (2 credits — it's GPU-heavy)"],
+        faq=[("How is this different from resizing in an editor?",
+              "Editors interpolate pixels — soft results at best. Neural upscaling "
+              "reconstructs plausible detail learned from millions of videos."),
+             ("What's the output size limit?",
+              "Output is capped to a server-safe long side, so extremely large sources are "
+              "restored at high quality rather than doubled further."),
+             ("Why 2 credits?",
+              "Every frame runs through a GPU network — the heaviest job we offer. The "
+              "preview is still free.")],
+        related=["video-enhancer", "remove-watermark-from-video", "resize-video-for-tiktok"]),
+
+    "resize-video-for-tiktok": dict(
+        task="reframe",
+        demo="demo-reframe-vertical",
+        title="Resize Video for TikTok — 9:16 Vertical with AI Tracking — CleanReel",
+        h1="Resize your video for TikTok",
+        desc="Turn landscape footage you own into 9:16 vertical for TikTok — an AI virtual "
+             "camera keeps the subject centered. Free preview.",
+        intro="A straight center-crop to 9:16 loses the action the moment your subject moves. "
+              "CleanReel's smart crop tracks faces and motion with a smooth virtual camera, "
+              "so your landscape clip becomes a vertical that stays on the subject.",
+        use_cases=["Repurposing YouTube or event footage for TikTok",
+                   "Turning interviews and talking heads vertical",
+                   "Product and demo clips shot landscape",
+                   "Sports and action moments where the subject moves"],
+        steps=["Upload the landscape video you own",
+               "Pick 9:16 vertical",
+               "Smart crop tracks the subject — or tap the frame to pin the focus",
+               "Preview the reframe free",
+               "Export — then add captions in one more pass if you like"],
+        faq=[("What if the whole frame matters?",
+              "Choose Fit + blurred bars instead of smart crop — the full frame stays "
+              "visible over cinematic blurred padding."),
+             ("Can I control what the crop follows?",
+              "Yes — tap the frame to pin the crop center, or leave it on auto face & "
+              "motion tracking."),
+             ("Does TikTok need captions too?",
+              "They help a lot — CleanReel's Captions mode transcribes speech and burns in "
+              "styled captions, with a free .srt download.")],
+        related=["resize-video-for-instagram-reels", "add-captions-to-video", "video-upscaler"]),
+
+    "resize-video-for-instagram-reels": dict(
+        task="reframe",
+        demo="demo-reframe-vertical",
+        title="Resize Video for Instagram Reels — 9:16 & 4:5 with AI — CleanReel",
+        h1="Resize your video for Instagram Reels",
+        desc="Convert landscape footage you own to 9:16 Reels or 4:5 feed video — AI subject "
+             "tracking keeps the framing right. Free preview.",
+        intro="Reels wants 9:16, feed prefers 4:5, your footage is 16:9. CleanReel reframes "
+              "to either shape with a smooth AI virtual camera that follows faces and motion, "
+              "or fits the full frame over blurred bars.",
+        use_cases=["Repurposing long-form video into Reels",
+                   "4:5 feed versions of landscape promos",
+                   "Client content deliverables in multiple aspect ratios",
+                   "Square 1:1 versions for profile grids"],
+        steps=["Upload the video you own",
+               "Pick 9:16 (Reels), 4:5 (feed) or 1:1 (square)",
+               "Smart crop follows the subject — or pin the focus with a tap",
+               "Preview free",
+               "Export, and caption it with the Captions mode if it has speech"],
+        faq=[("Which ratio should I pick for Instagram?",
+              "9:16 for Reels and Stories, 4:5 for feed posts, 1:1 for grids — you can "
+              "export each from the same upload."),
+             ("Will text or logos near the edges get cut?",
+              "Smart crop centers on subjects, so edge graphics can crop out — use Fit + "
+              "blurred bars when edge content must survive."),
+             ("Is the export re-compressed?",
+              "It's re-encoded at high quality (CRF 16) with your audio copied through.")],
+        related=["resize-video-for-tiktok", "add-captions-to-video", "video-enhancer"]),
+
+    "add-captions-to-video": dict(
+        task="captions",
+        title="Add Captions to Video Online — AI Transcribed & Burned In — CleanReel",
+        h1="Add captions to your video",
+        desc="AI transcribes the speech in your video and burns in clean, readable captions — "
+             "plus a free .srt download. Language auto-detected. Free preview.",
+        intro="Most viewers watch with the sound off — captions keep them watching. CleanReel "
+              "transcribes your clip's speech with AI (language auto-detected), burns in "
+              "bold, readable captions sized to your video, and gives you the transcript as "
+              "a free .srt file.",
+        use_cases=["Talking-head clips for TikTok, Reels and Shorts",
+                   "Tutorials and how-tos watched on mute",
+                   "Accessibility for deaf and hard-of-hearing viewers",
+                   "Podcast clips and interview snippets"],
+        steps=["Upload a clip with clear speech (up to 60s / 200 MB)",
+               "Pick Captions mode — no marking needed",
+               "Preview the burned-in captions free",
+               "Download the .srt free, even from the preview",
+               "Export the captioned full video (1 credit)"],
+        faq=[("What languages does it support?",
+              "The language is auto-detected — the AI model supports dozens of languages, "
+              "and the free preview shows you the accuracy before you pay."),
+             ("Can I get just the subtitle file?",
+              "Yes — the .srt transcript is free on every captions job, including free "
+              "previews. Only the burned-in export costs a credit."),
+             ("What do the captions look like?",
+              "Bold white text with a dark outline, bottom-centered and sized to your "
+              "video — the style that survives every feed's compression.")],
+        related=["auto-subtitle-generator", "burn-subtitles-into-video", "resize-video-for-tiktok"]),
+
+    "auto-subtitle-generator": dict(
+        task="captions",
+        title="Auto Subtitle Generator — Free SRT from Video Online — CleanReel",
+        h1="Generate subtitles for your video automatically",
+        desc="Upload a video, get AI-generated subtitles: a free .srt file plus optional "
+             "burned-in captions. Language auto-detected, timestamps included.",
+        intro="Typing subtitles by hand is the worst job in video. CleanReel listens to your "
+              "clip, generates accurately timestamped subtitles with AI speech recognition, "
+              "and hands you the .srt for free — burn them in only if you want to.",
+        use_cases=["SRT files for YouTube, Vimeo or LinkedIn uploads",
+                   "Transcripts for editing or translation workflows",
+                   "Subtitles for course and training videos",
+                   "Quick captions for social clips"],
+        steps=["Upload your video (up to 60s / 200 MB)",
+               "Pick Captions mode",
+               "Run a free preview — speech is transcribed with AI",
+               "Download the .srt file — free",
+               "Optionally export with the captions burned in (1 credit)"],
+        faq=[("Is the SRT really free?",
+              "Yes — every captions job includes the .srt download at no cost, even on free "
+              "previews. Credits are only for the burned-in video export."),
+             ("How accurate is the transcription?",
+              "It uses the Whisper family of speech models — strong on clear speech, and the "
+              "free preview lets you check your clip before paying anything."),
+             ("Can I edit the subtitles?",
+              "The .srt is a plain-text standard — open it in any editor or subtitle tool, "
+              "tweak the text, and upload it wherever you publish.")],
+        related=["add-captions-to-video", "free-srt-generator", "burn-subtitles-into-video"]),
+
+    "burn-subtitles-into-video": dict(
+        task="captions",
+        title="Burn Subtitles into Video Online (Hardcode Captions) — CleanReel",
+        h1="Burn subtitles into your video",
+        desc="Hardcode captions into your video so they show everywhere — AI transcribes the "
+             "speech and renders clean styled subtitles into the pixels. Free preview.",
+        intro="Platform captions vanish when a clip is downloaded, embedded, or reposted — "
+              "burned-in subtitles are part of the pixels and show everywhere. CleanReel "
+              "transcribes your speech with AI and hardcodes clean, styled captions in one "
+              "pass.",
+        use_cases=["Clips reposted across platforms that drop caption tracks",
+                   "Ads and promos where captions must always show",
+                   "Event screens and displays with no subtitle support",
+                   "Client deliverables that need captions baked in"],
+        steps=["Upload your clip with speech",
+               "Pick Captions mode — transcription is automatic",
+               "Preview the burned-in result free",
+               "Grab the free .srt too if you need the text version",
+               "Export the hardcoded full video (1 credit)"],
+        faq=[("Burned-in vs. an .srt file — which do I need?",
+              "An .srt is a separate file platforms can show or hide; burned-in captions are "
+              "rendered into the video itself and can never be turned off. CleanReel gives "
+              "you both."),
+             ("Will the captions survive compression?",
+              "The style — bold white with a dark outline — is chosen to stay readable "
+              "through every platform's re-encode."),
+             ("Can I burn in my own edited subtitles?",
+              "Not yet — today the captions come from the AI transcription of your clip's "
+              "audio. Edited-SRT upload is on the roadmap.")],
+        related=["add-captions-to-video", "auto-subtitle-generator", "remove-subtitles-from-video"]),
+
+    "free-srt-generator": dict(
+        task="captions",
+        title="Free SRT Generator — AI Subtitles from Video — CleanReel",
+        h1="Generate a free SRT file from your video",
+        desc="Get an accurately timestamped .srt subtitle file from any video you own — free, "
+             "AI-transcribed, language auto-detected. No credit needed.",
+        intro="Need the subtitle file, not a new video? Upload your clip, run a free preview, "
+              "and download the AI-generated .srt — accurately timestamped, language "
+              "auto-detected, and genuinely free: the transcript never costs a credit.",
+        use_cases=["SRT sidecar files for YouTube and Vimeo uploads",
+                   "Transcripts for blog posts and show notes",
+                   "Translation source files for multilingual subs",
+                   "Caption files for platforms you publish on"],
+        steps=["Upload a video with speech (up to 60s / 200 MB)",
+               "Pick Captions mode and run a free preview",
+               "AI transcribes the speech with timestamps",
+               "Download the .srt — free, no credit used",
+               "Optionally export the video with captions burned in (1 credit)"],
+        faq=[("What's the catch — why is it free?",
+              "The transcript is free because many people then want the burned-in version, "
+              "which is the paid export. If you only need the .srt, it's yours."),
+             ("Does it handle accents and background noise?",
+              "The AI speech model is robust to accents; heavy background noise reduces "
+              "accuracy — the free preview shows you exactly what you'll get."),
+             ("What's an SRT file exactly?",
+              "A plain-text subtitle standard: numbered lines with start/end timestamps. "
+              "Nearly every video platform and player accepts it.")],
+        related=["auto-subtitle-generator", "add-captions-to-video", "burn-subtitles-into-video"]),
 }
 
 CSS = """
@@ -339,7 +637,10 @@ def demo_block(demo):
         "name": d["name"], "description": d["desc"],
         "thumbnailUrl": f"{SITE}/demos/{demo}-poster.jpg",
         "contentUrl": f"{SITE}/demos/{demo}.mp4",
-        "uploadDate": "2026-07-09", "duration": d["duration"]}, ensure_ascii=False)
+        # Full ISO-8601 with timezone — a bare date made Search Console warn
+        # about ambiguous uploadDate values (CLE-27).
+        "uploadDate": "2026-07-09T12:00:00+09:30",
+        "duration": d["duration"]}, ensure_ascii=False)
     return (
         f'<script type="application/ld+json">{schema}</script>\n'
         f'  <div class="card" style="padding:10px;border:2px solid transparent;border-radius:16px;'

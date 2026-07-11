@@ -35,7 +35,14 @@ _ROOT = "/root/wmodels"
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg")
-    .pip_install("faster-whisper", "fastapi[standard]")
+    # nvidia wheels: ctranslate2 (faster-whisper's engine) dlopens cuBLAS /
+    # cuDNN 9 at TRANSCRIBE time, not model-load time — without them the app
+    # deploys and starts up "healthy", then 500s on the first real request.
+    .pip_install("faster-whisper", "fastapi[standard]",
+                 "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*")
+    .env({"LD_LIBRARY_PATH":
+          "/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:"
+          "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib"})
     # Bake the model at BUILD (and load-test it on CPU) so cold starts never
     # download and a broken snapshot fails the deploy, not a customer job.
     .run_commands(
@@ -83,18 +90,35 @@ class Whisper:
         audio_b64 = (payload or {}).get("audio", "")
         if not audio_b64 or len(audio_b64) > 40_000_000:   # ~30 MB decoded cap
             raise HTTPException(status_code=400, detail="bad audio payload")
-        try:
-            buf = io.BytesIO(base64.b64decode(audio_b64))
-            segments, info = self.model.transcribe(
-                buf,
+        raw = base64.b64decode(audio_b64)
+
+        def _run(model):
+            segments, info = model.transcribe(
+                io.BytesIO(raw),
                 language=(payload or {}).get("language") or None,
                 vad_filter=True,                # skip long silences
                 beam_size=5,
             )
-            out = [{"start": round(s.start, 3), "end": round(s.end, 3),
-                    "text": s.text.strip()}
-                   for s in segments if s.text and s.text.strip()]
+            return [{"start": round(s.start, 3), "end": round(s.end, 3),
+                     "text": s.text.strip()}
+                    for s in segments if s.text and s.text.strip()], info
+        import traceback
+        try:
+            out, info = _run(self.model)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"transcribe failed: {e}")
+            traceback.print_exc()               # keep failures diagnosable in Modal logs
+            if self.device != "cuda":
+                raise HTTPException(status_code=500, detail=f"transcribe failed: {e}")
+            # cuda failures surface HERE (lazy lib loading), not in enter() —
+            # degrade this container to CPU int8 instead of 500ing the job.
+            print(f"[whisper] cuda transcribe failed ({e!r}); retrying on CPU int8", flush=True)
+            try:
+                self.model = WhisperModel(_MODEL, device="cpu",
+                                          compute_type="int8", download_root=_ROOT)
+                self.device = "cpu"
+                out, info = _run(self.model)
+            except Exception as e2:
+                traceback.print_exc()
+                raise HTTPException(status_code=500, detail=f"transcribe failed: {e2}")
         return {"language": info.language, "duration": round(info.duration, 3),
                 "segments": out}
