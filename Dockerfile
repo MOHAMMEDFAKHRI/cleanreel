@@ -3,7 +3,10 @@
 FROM python:3.12-slim
 
 # ffmpeg (engine) + libglib2.0-0 (needed by opencv-python-headless on slim images)
+# + fonts-dejavu-core (libass caption rendering — the captions task's ASS style
+#   names "DejaVu Sans"; without a real font libass silently renders nothing)
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libglib2.0-0 \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -112,10 +112,13 @@ class Job:
     qc: dict | None = None          # quality report: confidence, residual_reduction, damage
     created: float = field(default_factory=time.time)
     key: str | None = None          # dedup key (file_id|task|mode) — double-submit guard
+    srt: str | None = None          # captions task: the .srt text (served via /api/srt)
 
     def public(self):
         d = asdict(self)
-        d.pop("result_path", None); d.pop("before_path", None); d.pop("key", None)
+        for k in ("result_path", "before_path", "key", "srt"):
+            d.pop(k, None)
+        d["has_srt"] = bool(self.srt)
         return d
 
 
@@ -303,7 +306,7 @@ class JobManager:
 
     def _run(self, job: Job, params: dict):
         video = params["video_path"]
-        task = params.get("task", "remove")     # remove | erase | enhance | reframe | blur
+        task = params.get("task", "remove")     # remove | erase | enhance | reframe | blur | captions
         seconds = PREVIEW_SECONDS if job.mode == "preview" else None
         out = os.path.join(self.storage, "results", f"{job.id}.mp4")
 
@@ -331,6 +334,25 @@ class JobManager:
                              denoise=bool(params.get("denoise", True)),
                              sharpen=float(params.get("strength", 0.6)),
                              preview=seconds, max_dim=max_out,
+                             progress_cb=render_progress)
+            job.result_path = out
+            return
+
+        # ---------- CAPTIONS: transcribe speech, burn styled subtitles ----------
+        if task == "captions":
+            job.progress = 0.15
+            job.message = "Transcribing speech (AI)..."
+            tmpd = tempfile.mkdtemp()
+            try:
+                segs, lang = wr.transcribe_audio(video, tmpd)
+            finally:
+                shutil.rmtree(tmpd, ignore_errors=True)
+            if not segs:
+                raise RuntimeError("No speech detected — nothing to caption.")
+            job.srt = wr.segments_to_srt(segs)
+            job.progress = 0.55
+            job.message = f"Rendering captions ({len(segs)} lines)..."
+            wr.caption_video(video, out, segs, preview=seconds,
                              progress_cb=render_progress)
             job.result_path = out
             return

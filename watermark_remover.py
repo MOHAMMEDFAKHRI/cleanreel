@@ -330,6 +330,107 @@ def mux_audio(video_only, src, out, audio=None):
         shutil.copy(video_only, out)
 
 
+def transcribe_audio(src, tmpdir):
+    """Extract mono 16 kHz audio and transcribe it on the Whisper GPU service
+    (WR_WHISPER_URL). Returns (segments, language) with segments =
+    [{"start", "end", "text"}, ...]. Raises on any failure — captions have no
+    meaningful local fallback, so the job fails with a clear message instead."""
+    import base64
+    import requests
+    url = os.environ.get("WR_WHISPER_URL", "").strip()
+    if not url:
+        raise RuntimeError("Captions aren't enabled on this server yet.")
+    wav = os.path.join(tmpdir, "aud16k.wav")
+    r = subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", src,
+                        "-vn", "-ac", "1", "-ar", "16000",
+                        "-acodec", "pcm_s16le", wav])
+    if r.returncode != 0 or not os.path.isfile(wav) or os.path.getsize(wav) < 8000:
+        raise RuntimeError("This clip doesn't seem to have audible speech.")
+    body = {"token": os.environ.get("WR_INPAINT_TOKEN", ""),
+            "audio": base64.b64encode(open(wav, "rb").read()).decode()}
+    timeout = float(os.environ.get("WR_WHISPER_TIMEOUT", "300"))
+    last = None
+    for _ in range(2):                       # one retry, like the GPU siblings
+        try:
+            resp = requests.post(url, json=body, timeout=timeout)
+            resp.raise_for_status()
+            d = resp.json()
+            segs = [s for s in d.get("segments", [])
+                    if (s.get("text") or "").strip()]
+            return segs, d.get("language")
+        except Exception as e:
+            last = e
+    raise RuntimeError(f"Transcription failed ({last!r}).")
+
+
+def _ts_srt(t):
+    h = int(t // 3600); m = int(t % 3600 // 60); s = t % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+
+def segments_to_srt(segs):
+    """Standard .srt text from whisper segments."""
+    return "\n".join(
+        f"{i + 1}\n{_ts_srt(float(s['start']))} --> {_ts_srt(float(s['end']))}\n"
+        f"{str(s['text']).strip()}\n"
+        for i, s in enumerate(segs))
+
+
+def _ts_ass(t):
+    h = int(t // 3600); m = int(t % 3600 // 60); s = t % 60
+    return f"{h:d}:{m:02d}:{s:05.2f}"
+
+
+def caption_video(path, out, segs, preview=None, progress_cb=None):
+    """Burn styled captions into the clip (ASS subtitles rendered by ffmpeg's
+    libass): bold white text, black outline, bottom-centred, size scaled to
+    the frame. Audio is re-muxed alongside. One ffmpeg pass — no frame loop."""
+    w, h, fps, n = probe(path)
+    fs = max(18, int(h * 0.045))
+    mv = max(20, int(h * 0.06))
+    header = (
+        "[Script Info]\nScriptType: v4.00+\n"
+        f"PlayResX: {w}\nPlayResY: {h}\nWrapStyle: 0\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, "
+        "BackColour, Bold, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
+        f"Style: Cap,DejaVu Sans,{fs},&H00FFFFFF,&H00000000,&H7F000000,"
+        f"1,{max(2, fs // 12)},1,2,40,40,{mv}\n\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Text\n")
+    lines = []
+    for s in segs:
+        st, en = float(s["start"]), float(s["end"])
+        if preview and st >= preview:
+            break
+        if preview:
+            en = min(en, float(preview))
+        txt = (str(s["text"]).strip().replace("\\", "")
+               .replace("{", "(").replace("}", ")").replace("\n", " "))
+        if txt:
+            lines.append(f"Dialogue: 0,{_ts_ass(st)},{_ts_ass(en)},Cap,{txt}")
+    if not lines:
+        raise RuntimeError("No speech found in the previewed part of the clip.")
+    tmp = tempfile.mkdtemp()
+    try:
+        ass = os.path.join(tmp, "subs.ass")
+        with open(ass, "w", encoding="utf-8") as f:
+            f.write(header + "\n".join(lines) + "\n")
+        dur = ["-t", str(preview)] if preview else []
+        r = subprocess.run([ffmpeg_bin(), "-y", "-loglevel", "error",
+                            "-i", path, *dur, "-vf", f"ass={ass}",
+                            "-c:v", "libx264", "-crf", "16", "-preset", "medium",
+                            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+                            "-movflags", "+faststart", out])
+        if (r.returncode != 0 or not os.path.isfile(out)
+                or os.path.getsize(out) < 1024):
+            raise RuntimeError("Caption render failed.")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if progress_cb:
+        progress_cb(1, 1)
+    print(f"done -> {out}")
+
+
 def _deepfilter_bin():
     """Path to the deep-filter CLI (DeepFilterNet's MIT/Apache-licensed Rust
     binary, fetched at Docker build time) or None if unavailable."""

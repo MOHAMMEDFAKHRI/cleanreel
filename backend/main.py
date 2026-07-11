@@ -408,8 +408,8 @@ def create_job(req: JobRequest, request: Request,
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
     task = (req.task or "remove").lower()
-    if task not in ("remove", "erase", "enhance", "reframe", "blur"):
-        raise HTTPException(400, "task must be remove | erase | enhance | reframe | blur.")
+    if task not in ("remove", "erase", "enhance", "reframe", "blur", "captions"):
+        raise HTTPException(400, "task must be remove | erase | enhance | reframe | blur | captions.")
     if task == "erase" and not (req.mask or req.boxes):
         raise HTTPException(400, "Brush over what you want erased first.")
     if task == "blur":
@@ -525,7 +525,21 @@ def job_status(job_id: str):
         # so the front-end never offers a compare it can't play.
         if job.before_path and os.path.exists(job.before_path):
             data["before_url"] = f"/api/before/{job_id}"
+        if getattr(job, "srt", None):
+            data["srt_url"] = f"/api/srt/{job_id}"
     return data
+
+
+@app.get("/api/srt/{job_id}")
+def srt_file(job_id: str):
+    """The captions task's transcript as a downloadable .srt (free — the SRT
+    is lead-gen; the burned-in export is what costs a credit)."""
+    job = manager.get(job_id)
+    if not job or not getattr(job, "srt", None):
+        raise HTTPException(404, "No captions for this job.")
+    return PlainTextResponse(job.srt, media_type="application/x-subrip",
+                             headers={"Content-Disposition":
+                                      'attachment; filename="captions.srt"'})
 
 
 @app.get("/api/result/{job_id}")

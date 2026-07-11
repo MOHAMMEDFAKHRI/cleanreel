@@ -174,6 +174,7 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
       <button class="tool mode" data-task="enhance">✨ Enhance</button>
       <button class="tool mode" data-task="reframe">📱 Reframe</button>
       <button class="tool mode" data-task="blur">🕶 Privacy blur</button>
+      <button class="tool mode" data-task="captions">💬 Captions</button>
     </div>
     <div class="grid2">
       <div>
@@ -248,6 +249,14 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
           </div>
           <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
         </div>
+        <div id="captionsWrap" style="display:none">
+          <p class="hint">Speech is transcribed by AI (language auto-detected) and burned in as
+            clean, readable captions — white text, dark outline, bottom-centred, sized to your
+            video. You also get the transcript as a free downloadable <b>.srt</b> file, even on
+            previews.</p>
+          <p class="hint">Works best on clips with clear speech. Music-only clips will come back
+            with "no speech detected" — previews are free, so it costs nothing to check.</p>
+        </div>
 
         <label class="chk"><input id="cleanAudio" type="checkbox"/> <span>Clean audio — remove hiss, wind &amp; background noise (free)</span></label>
         <label class="chk"><input id="owns" type="checkbox"/> <span>I own or have the
@@ -280,6 +289,7 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
         </div>
         <p class="hint" id="cmpHint" style="display:none">Drag the handle to sweep between the original and the result. Both loop muted &amp; in sync.</p>
         <a id="dl" class="dl">⬇ Download cleaned video</a>
+        <a id="srtDl" class="dl" style="display:none" download="captions.srt">📝 Download subtitles (.srt) — free</a>
         <p id="retry" class="hint" style="display:none">Not fully clean? Adjust your highlight on the left and hit <b>Free preview</b> again — previews are free and unlimited.</p>
       </div>
     </div>
@@ -390,7 +400,9 @@ const TASK_COPY={
     hint:'Optional: <b>tap the frame</b> to pin the crop centre — a crosshair marks it and the camera stays locked there. No pin = smart auto-tracking (faces &amp; motion). <b>✖ Clear focus</b> returns to auto.'},
   blur:{tag:'Step 2 · Choose what to blur',
     need:'Upload a video — faces are blurred automatically; you can brush extra areas too.',
-    hint:'Faces (and plates, if ticked) are found and blurred in every frame — hit <b>👁 Preview detection</b> to see what\'s caught. Brush anything else (a name tag, a screen, an address) and it\'s blurred too. If a brushed region moves, tick <b>Moving region</b> below.'}
+    hint:'Faces (and plates, if ticked) are found and blurred in every frame — hit <b>👁 Preview detection</b> to see what\'s caught. Brush anything else (a name tag, a screen, an address) and it\'s blurred too. If a brushed region moves, tick <b>Moving region</b> below.'},
+  captions:{tag:'Step 2 · Caption options',
+    need:'Upload a video with speech — captions are generated automatically.'}
 };
 let savedMask=null;                  // remove/erase paint, parked while in reframe
 function setTask(t){
@@ -405,6 +417,7 @@ function setTask(t){
   $("enhanceWrap").style.display=(t==='enhance')?'block':'none';
   $("reframeWrap").style.display=(t==='reframe')?'block':'none';
   $("blurWrap").style.display=(t==='blur')?'block':'none';
+  $("captionsWrap").style.display=(t==='captions')?'block':'none';
   $("toolbar").style.display=ed?'':'none';
   $("tAuto").style.display=(t==='remove')?'':'none';
   $("tFaces").style.display=(t==='blur')?'':'none';
@@ -515,7 +528,7 @@ async function handleHash(){
   } else if(h==='#paid'){ history.replaceState(null,'','#tool'); await refreshMe(); $("acctInfo").innerHTML+=' <b>— thanks, credits added!</b>'; }
   else if(h.startsWith('#tool=')){                 // deep link from SEO pages: /#tool=remove
     const t=h.slice(6);
-    if(['remove','erase','enhance','reframe','blur'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
+    if(['remove','erase','enhance','reframe','blur','captions'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
     history.replaceState(null,'','#tool');
     try{ document.getElementById('tool').scrollIntoView(); }catch(e){}
   }
@@ -762,11 +775,12 @@ async function run(kind){
     erase:"Submitting — analysing the marked region…",
     enhance:"Submitting — enhancement starts in a moment…",
     blur:"Submitting — finding faces/plates to blur…",
+    captions:"Submitting — transcription starts in a moment…",
     reframe:(focusPt&&fitSel==='crop'&&task==='reframe')
       ?"Submitting — cropping around your focus point…"
       :"Submitting — smart-tracking the subject…"};
   $("prog").style.width="6%"; $("status").textContent=RUN_COPY[task]||"Submitting…";
-  $("dl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none";
+  $("dl").style.display="none"; $("srtDl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none";
   resetCompare();
   try{
     const r=await fetch(API+"/api/jobs",{method:"POST",
@@ -819,6 +833,7 @@ async function poll(id, t, fails=0){
       track('job_done',{task:t,mode:lastMode,confidence:j.qc?j.qc.confidence:null});
       const now=Date.now(), u=API+j.result_url+"?t="+now;
       $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
+      if(j.srt_url){ $("srtDl").href=API+j.srt_url; $("srtDl").style.display="inline-block"; }
       compareReady(u,t,j.before_url?API+j.before_url+"?t="+now:null);
       const editTask=(t==='remove'||t==='erase'||t==='blur');
       $("retry").style.display=editTask?"block":"none";
