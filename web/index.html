@@ -745,7 +745,8 @@ $("file").addEventListener("change",()=>{
   $("meta").textContent="Ready — hit Upload.";
   try{ const v=document.createElement('video'); v.preload='metadata';
     v.onloadedmetadata=()=>{ const s=v.duration||0; try{URL.revokeObjectURL(v.src);}catch(e){}
-      if(s>MAXSEC+0.5){ $("tooLong").innerHTML=`⚠ That clip is ${Math.round(s)}s — the limit is <b>${MAXSEC}s</b> per video. Trim it to ${MAXSEC}s or less, then re-select.`;
+      if(s>MAXSEC+0.5){ track('upload_too_long',{seconds:Math.round(s),task});
+        $("tooLong").innerHTML=`⚠ That clip is ${Math.round(s)}s — the limit is <b>${MAXSEC}s</b> per video. Trim it to ${MAXSEC}s or less, then re-select.`;
         $("tooLong").style.display='block'; $("up").disabled=true; $("meta").textContent=''; } };
     v.src=URL.createObjectURL(f);
   }catch(e){}
