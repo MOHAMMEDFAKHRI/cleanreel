@@ -86,6 +86,13 @@ class Lama:
         from simple_lama_inpainting import SimpleLama
         self.model = SimpleLama()
 
+    def _lama(self, img, msk):
+        """One native-resolution LaMa pass. img BGR, msk uint8 0/255."""
+        rgb = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        m = Image.fromarray(((msk > 127).astype("uint8") * 255))
+        res = np.array(self.model(rgb, m))                       # RGB, may be padded to /8
+        return cv2.cvtColor(res, cv2.COLOR_RGB2BGR)[: img.shape[0], : img.shape[1]]
+
     def _one(self, img_b64: str, mask_b64: str) -> str:
         img = cv2.imdecode(np.frombuffer(base64.b64decode(img_b64), np.uint8), cv2.IMREAD_COLOR)
         msk = cv2.imdecode(np.frombuffer(base64.b64decode(mask_b64), np.uint8), cv2.IMREAD_GRAYSCALE)
@@ -93,10 +100,35 @@ class Lama:
             raise ValueError("bad image/mask payload")
         if msk.shape[:2] != img.shape[:2]:
             msk = cv2.resize(msk, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-        rgb = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        m = Image.fromarray(((msk > 127).astype("uint8") * 255))
-        res = np.array(self.model(rgb, m))                       # RGB, may be padded to /8
-        out = cv2.cvtColor(res, cv2.COLOR_RGB2BGR)[: img.shape[0], : img.shape[1]]
+        H, W = img.shape[:2]
+        hole = float((msk > 127).mean())
+        long_side = max(H, W)
+        # LARGE-HOLE STRATEGY (CLE-31): LaMa's global structure degrades badly on
+        # big holes at native resolution (repeating-texture smear). The standard
+        # remedy is the "resize" strategy: inpaint a 512-long-side downscale
+        # (LaMa's sweet spot -> coherent global fill), upscale that fill, and
+        # paste it into the masked area only. Slightly soft inside very large
+        # fills, but structurally right — dramatically better than the smear.
+        # Small marks (watermarks, logos, text) keep the sharp native-res path.
+        if long_side > 512 and (hole > 0.15 or (hole * H * W) > 150_000):
+            s = 512.0 / long_side
+            sw, sh = max(8, int(W * s)) // 8 * 8, max(8, int(H * s)) // 8 * 8
+            img_s = cv2.resize(img, (sw, sh), interpolation=cv2.INTER_AREA)
+            msk_s = cv2.resize(msk, (sw, sh), interpolation=cv2.INTER_NEAREST)
+            msk_s = cv2.dilate(msk_s, np.ones((3, 3), np.uint8))
+            fill_s = self._lama(img_s, msk_s)
+            fill = cv2.resize(fill_s, (W, H), interpolation=cv2.INTER_LANCZOS4)
+            out = img.copy()
+            mm = msk > 127
+            out[mm] = fill[mm]
+            # feather the paste boundary so the resolution change never shows
+            band = cv2.dilate((mm * 255).astype(np.uint8), np.ones((7, 7), np.uint8)) \
+                   & ~cv2.erode((mm * 255).astype(np.uint8), np.ones((7, 7), np.uint8))
+            blur = cv2.GaussianBlur(out, (0, 0), 2)
+            a = (band > 0)[..., None] * 0.6
+            out = (out * (1 - a) + blur * a).astype(np.uint8)
+        else:
+            out = self._lama(img, msk)
         ok, buf = cv2.imencode(".png", out)
         if not ok:
             raise RuntimeError("png encode failed")

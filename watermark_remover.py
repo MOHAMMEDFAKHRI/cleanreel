@@ -1588,7 +1588,18 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
         # region and fill it flow-consistently across all frames — kills the
         # per-frame shimmer. Needs >=2 localized ROIs; "full"-frame plans and
         # any failure fall through to the per-frame path below.
+        # STATIC-SCENE GUARD (CLE-31): flow-based temporal inpainting needs
+        # motion to pull real pixels from. On a (near-)static chunk ProPainter
+        # has nothing to propagate and hallucinates a low-res checkered fill —
+        # far worse than per-frame LaMa. Cheap test: if the first and last
+        # frames of the chunk are near-identical, skip the temporal path.
+        _static_chunk = False
+        if idxs and len(idxs) >= 2:
+            fa, fb = buf[idxs[0]][0], buf[idxs[-1]][0]
+            _static_chunk = float(
+                np.mean(cv2.absdiff(fa[::4, ::4], fb[::4, ::4]))) < 1.0
         if (idxs and getattr(inp, "seq_url", None) and len(idxs) >= 2
+                and not _static_chunk
                 and getattr(inp, "_seq_fails", 0) < 2
                 and all(buf[i][1][0] != "full" for i in idxs)):
             y0 = min(buf[i][1][0][0] for i in idxs)
