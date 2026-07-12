@@ -395,6 +395,11 @@ class JobRequest(BaseModel):
     style: str | None = None              # blur: 'blur' | 'pixelate'
     clean_audio: bool = False             # any task: denoise audio (DeepFilterNet)
     cap_style: str | None = None          # reel: caption preset 'clean' | 'bold' | 'minimal'
+    cap_pos: str | None = None            # reel: 'bottom' | 'middle'
+    cap_size: str | None = None           # reel: 's' | 'm' | 'l'
+    cap_color: str | None = None          # reel: 'white' | 'yellow' | 'green' | 'pink'
+    card_theme: str | None = None         # reel: 'dark' | 'light' | 'accent'
+    card_secs: float | None = None        # reel: end-card duration 1..5s
     cta: str | None = None                # reel: end-card text (<= 80 chars)
     trim_start: float | None = None       # reel: trim in (seconds)
     trim_end: float | None = None         # reel: trim out (seconds)
@@ -438,6 +443,14 @@ def create_job(req: JobRequest, request: Request,
     if task == "reel":
         if (req.cap_style or "clean").lower() not in ("clean", "bold", "minimal"):
             raise HTTPException(400, "cap_style must be clean | bold | minimal.")
+        if (req.cap_pos or "bottom").lower() not in ("bottom", "middle"):
+            raise HTTPException(400, "cap_pos must be bottom | middle.")
+        if (req.cap_size or "m").lower() not in ("s", "m", "l"):
+            raise HTTPException(400, "cap_size must be s | m | l.")
+        if (req.cap_color or "white").lower() not in ("white", "yellow", "green", "pink"):
+            raise HTTPException(400, "cap_color must be white | yellow | green | pink.")
+        if (req.card_theme or "dark").lower() not in ("dark", "light", "accent"):
+            raise HTTPException(400, "card_theme must be dark | light | accent.")
         t0 = max(0.0, float(req.trim_start or 0.0))
         t1 = float(req.trim_end) if req.trim_end else None
         if t1 is not None and t1 <= t0 + 0.5:
@@ -529,6 +542,11 @@ def create_job(req: JobRequest, request: Request,
             params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
                                max(0.0, min(1.0, float(req.focus[1]))))
         params["cap_style"] = (req.cap_style or "clean").lower()
+        params["cap_pos"] = (req.cap_pos or "bottom").lower()
+        params["cap_size"] = (req.cap_size or "m").lower()
+        params["cap_color"] = (req.cap_color or "white").lower()
+        params["card_theme"] = (req.card_theme or "dark").lower()
+        params["card_secs"] = max(1.0, min(5.0, float(req.card_secs or 2.5)))
         params["captions"] = bool(req.captions)
         # CTA: strip control characters, hard cap at 80 chars (2 lines on card)
         cta = "".join(ch for ch in (req.cta or "") if ch.isprintable())[:80].strip()

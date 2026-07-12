@@ -127,6 +127,22 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
   .cmpSbs video{width:100%;margin:0;max-height:380px}
   .cmpSbs figcaption{color:var(--mut);font-size:13px;text-align:center;margin-top:4px}
   @media(max-width:620px){.cmpSbs{flex-direction:column}}
+  /* ---- Make-a-Reel wizard ---- */
+  .rsteps{display:flex;gap:6px;margin:4px 0 12px;flex-wrap:wrap}
+  .rstep{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:999px;
+    padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .rstep.active{color:#fff;background:linear-gradient(90deg,var(--acc),var(--acc2));border-color:transparent}
+  .rstep.donestep{color:var(--ok);border-color:rgba(54,211,155,.4)}
+  .rnext{font-weight:700}
+  .capmock{position:relative;margin:10px 0 2px;height:150px;border-radius:10px;overflow:hidden;
+    background:linear-gradient(135deg,#232a52,#12162e);display:flex;justify-content:center}
+  .capmock span{position:absolute;bottom:12px;max-width:86%;text-align:center;font-weight:800;
+    color:#fff;text-shadow:0 2px 4px #000,0 0 6px #000;font-size:18px;transition:all .15s}
+  .cardmock{margin:10px 0 2px;height:150px;border-radius:10px;display:flex;align-items:center;
+    justify-content:center;text-align:center;padding:0 18px;font-weight:800;font-size:19px;color:#fff;
+    background:linear-gradient(135deg,#0b0e1a,#2a1f5e);transition:background .2s}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  #rTrimV{background:#000;border-radius:10px;width:100%}
   /* ---- mobile-first sharpening (CLE: phones ~360-430px) ---- */
   @media(max-width:640px){
     .wrap{padding:0 14px}
@@ -279,29 +295,80 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
           <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
         </div>
         <div id="reelWrap" style="display:none">
-          <div class="optrow"><span class="pill">Shape</span>
-            <button class="tool rlr active" data-ratio="9:16">9:16 Reels/TikTok</button>
-            <button class="tool rlr" data-ratio="1:1">1:1 square</button>
-            <button class="tool rlr" data-ratio="4:5">4:5 feed</button>
+          <div class="rsteps">
+            <button class="rstep active" data-rs="1">1 · Shape &amp; trim</button>
+            <button class="rstep" data-rs="2">2 · Captions</button>
+            <button class="rstep" data-rs="3">3 · End card</button>
           </div>
-          <div class="optrow"><span class="pill">Captions</span>
-            <button class="tool rls active" data-capstyle="clean">Clean</button>
-            <button class="tool rls" data-capstyle="bold">Bold</button>
-            <button class="tool rls" data-capstyle="minimal">Minimal</button>
-            <button class="tool rls" data-capstyle="off">Off</button>
+          <div class="rpanel" id="rp1">
+            <div class="optrow"><span class="pill">Shape</span>
+              <button class="tool rlr active" data-ratio="9:16">9:16 Reels/TikTok</button>
+              <button class="tool rlr" data-ratio="1:1">1:1</button>
+              <button class="tool rlr" data-ratio="4:5">4:5</button>
+            </div>
+            <div class="optrow"><span class="pill">Fill</span>
+              <button class="tool rlf active" data-fit="crop">🎯 Smart crop</button>
+              <button class="tool rlf" data-fit="blur">🌫 Fit + blurred bars</button>
+            </div>
+            <div id="rTrimBox" style="display:none">
+              <video id="rTrimV" muted playsinline style="max-height:220px"></video>
+              <input id="rScrub" type="range" min="0" max="100" step="0.1" value="0" style="width:100%"/>
+              <div class="optrow">
+                <button class="tool" id="rSetIn">⇤ Start here</button>
+                <button class="tool" id="rSetOut">End here ⇥</button>
+                <span class="pill" id="rTrimLbl">Full clip</span>
+                <button class="tool" id="rTrimClr" style="display:none">✖ Reset</button>
+              </div>
+            </div>
+            <p class="hint" id="rTrimHint">Scrub the clip and mark where your reel should start and end — or leave it untouched to keep the whole clip. Tap the frame above to pin the crop.</p>
+            <div class="row" style="margin-top:8px"><button class="tool rnext" data-go="2">Next: captions →</button></div>
           </div>
-          <div class="optrow"><span class="pill">Trim</span>
-            <input id="reelT0" type="number" min="0" step="0.5" placeholder="start s" style="width:84px"/>
-            <input id="reelT1" type="number" min="0" step="0.5" placeholder="end s" style="width:84px"/>
-            <span class="pill">optional</span>
+          <div class="rpanel" id="rp2" style="display:none">
+            <div class="optrow"><span class="pill">Style</span>
+              <button class="tool rls active" data-capstyle="clean">Clean</button>
+              <button class="tool rls" data-capstyle="bold">Bold</button>
+              <button class="tool rls" data-capstyle="minimal">Minimal</button>
+              <button class="tool rls" data-capstyle="off">Off</button>
+            </div>
+            <div id="capOpts">
+              <div class="optrow"><span class="pill">Size</span>
+                <button class="tool rlz" data-capsize="s">S</button>
+                <button class="tool rlz active" data-capsize="m">M</button>
+                <button class="tool rlz" data-capsize="l">L</button>
+                <span class="pill" style="margin-left:10px">Position</span>
+                <button class="tool rlp active" data-cappos="bottom">Bottom</button>
+                <button class="tool rlp" data-cappos="middle">Middle</button>
+              </div>
+              <div class="optrow"><span class="pill">Color</span>
+                <button class="tool rlc active" data-capcolor="white"><i class="sw" style="background:#fff"></i>White</button>
+                <button class="tool rlc" data-capcolor="yellow"><i class="sw" style="background:#ffe14d"></i>Yellow</button>
+                <button class="tool rlc" data-capcolor="green"><i class="sw" style="background:#7fff8e"></i>Green</button>
+                <button class="tool rlc" data-capcolor="pink"><i class="sw" style="background:#ff69b4"></i>Pink</button>
+              </div>
+              <div class="capmock" id="capMock"><span id="capMockTxt">Your captions look like this</span></div>
+            </div>
+            <p class="hint">Speech is transcribed automatically (any language) — music-only clips
+              simply skip captions. You always get the <b>.srt</b> free.</p>
+            <div class="row" style="margin-top:8px"><button class="tool rnext" data-go="3">Next: end card →</button></div>
           </div>
-          <div class="optrow"><span class="pill">End card</span>
-            <input id="reelCta" type="text" maxlength="80" placeholder="e.g. Shop now → yourbrand.com (optional)" style="flex:1;min-width:200px"/>
+          <div class="rpanel" id="rp3" style="display:none">
+            <div class="optrow">
+              <input id="reelCta" type="text" maxlength="80" placeholder="e.g. Shop now → yourbrand.com (leave empty for no card)" style="flex:1;min-width:0"/>
+            </div>
+            <div class="optrow"><span class="pill">Theme</span>
+              <button class="tool rlt active" data-theme="dark">Dark</button>
+              <button class="tool rlt" data-theme="light">Light</button>
+              <button class="tool rlt" data-theme="accent">Accent</button>
+              <span class="pill" style="margin-left:10px">Length</span>
+              <input id="rCardSecs" type="range" min="1" max="5" step="0.5" value="2.5" style="width:90px"/>
+              <span class="pill" id="rCardSecsLbl">2.5s</span>
+            </div>
+            <div class="cardmock" id="cardMock"><span id="cardMockTxt">Your call to action</span></div>
+            <p class="hint">A short branded card appended after your reel — the "what to do next"
+              every ad needs. Leave the text empty to skip it.</p>
           </div>
-          <p class="hint">One pass: trim → reframe with AI subject tracking → AI captions
-            burned in → your end card appended. Speech is auto-detected — music-only clips
-            just skip the captions. Tap the frame to pin the crop, like Reframe.
-            Export uses <b>2 credits</b> (it runs two AI stages); previews are free.</p>
+          <p class="hint" style="margin-top:10px">One pass: trim → AI reframe → captions → end card.
+            Export uses <b>2 credits</b>; previews are free.</p>
         </div>
         <div id="captionsWrap" style="display:none">
           <p class="hint">Speech is transcribed by AI (language auto-detected) and burned in as
@@ -482,6 +549,7 @@ function setTask(t){
   $("blurWrap").style.display=(t==='blur')?'block':'none';
   $("captionsWrap").style.display=(t==='captions')?'block':'none';
   $("reelWrap").style.display=(t==='reel')?'block':'none';
+  if(t==='reel'){ try{ rTrimSetup(); }catch(e){} }
   $("toolbar").style.display=ed?'':'none';
   $("tAuto").style.display=(t==='remove')?'':'none';
   $("tFaces").style.display=(t==='blur')?'':'none';
@@ -515,13 +583,78 @@ document.querySelectorAll('#blurWrap .bs').forEach(b=>b.onclick=()=>{
   blurStyle=b.dataset.style;
   document.querySelectorAll('#blurWrap .bs').forEach(x=>x.classList.toggle('active',x===b)); });
 $("blurAmt").oninput=()=>$("blurVal").textContent=$("blurAmt").value+'%';
-let reelRatio='9:16', reelCapStyle='clean';
-document.querySelectorAll('#reelWrap .rlr').forEach(b=>b.onclick=()=>{
-  reelRatio=b.dataset.ratio;
-  document.querySelectorAll('#reelWrap .rlr').forEach(x=>x.classList.toggle('active',x===b)); });
-document.querySelectorAll('#reelWrap .rls').forEach(b=>b.onclick=()=>{
-  reelCapStyle=b.dataset.capstyle;
-  document.querySelectorAll('#reelWrap .rls').forEach(x=>x.classList.toggle('active',x===b)); });
+/* ---------- Make-a-Reel wizard ---------- */
+let reelRatio='9:16', reelFit='crop', reelCapStyle='clean', reelCapSize='m',
+    reelCapPos='bottom', reelCapColor='white', reelTheme='dark',
+    reelStart=0, reelEnd=0;
+function rchips(sel, key, fn){ document.querySelectorAll(sel).forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(sel).forEach(x=>x.classList.toggle('active',x===b));
+  fn(b.dataset[key]); }); }
+rchips('#reelWrap .rlr','ratio', v=>reelRatio=v);
+rchips('#reelWrap .rlf','fit',   v=>reelFit=v);
+rchips('#reelWrap .rls','capstyle', v=>{ reelCapStyle=v;
+  $("capOpts").style.display=(v==='off')?'none':'block'; capMockDraw(); });
+rchips('#reelWrap .rlz','capsize',  v=>{ reelCapSize=v; capMockDraw(); });
+rchips('#reelWrap .rlp','cappos',   v=>{ reelCapPos=v; capMockDraw(); });
+rchips('#reelWrap .rlc','capcolor', v=>{ reelCapColor=v; capMockDraw(); });
+rchips('#reelWrap .rlt','theme',    v=>{ reelTheme=v; cardMockDraw(); });
+function rShow(n){
+  document.querySelectorAll('#reelWrap .rpanel').forEach((p,i)=>p.style.display=(i===n-1)?'block':'none');
+  document.querySelectorAll('#reelWrap .rstep').forEach((s,i)=>{
+    s.classList.toggle('active', i===n-1); s.classList.toggle('donestep', i<n-1); });
+}
+document.querySelectorAll('#reelWrap .rstep').forEach(s=>s.onclick=()=>rShow(+s.dataset.rs));
+document.querySelectorAll('#reelWrap .rnext').forEach(b=>b.onclick=()=>rShow(+b.dataset.go));
+/* live caption mock */
+const CAP_HEX={white:'#fff',yellow:'#ffe14d',green:'#7fff8e',pink:'#ff69b4'};
+function capMockDraw(){
+  const t=$("capMockTxt"); if(!t) return;
+  const sz={s:14,m:18,l:23}[reelCapSize]||18;
+  const base={clean:1,bold:1.25,minimal:.85}[reelCapStyle]||1;
+  t.style.fontSize=Math.round(sz*base)+'px';
+  t.style.color=CAP_HEX[reelCapColor]||'#fff';
+  t.style.fontWeight=(reelCapStyle==='minimal')?'500':'800';
+  t.style.background=(reelCapStyle==='bold')?'rgba(0,0,0,.82)':'transparent';
+  t.style.padding=(reelCapStyle==='bold')?'3px 10px':'0';
+  t.style.textShadow=(reelCapStyle==='bold')?'none':'0 2px 4px #000,0 0 6px #000';
+  if(reelCapPos==='middle'){ t.style.bottom='auto'; t.style.top='50%'; t.style.transform='translateY(-50%)'; }
+  else { t.style.bottom='12px'; t.style.top='auto'; t.style.transform='none'; }
+}
+/* live end-card mock */
+const CARD_BG={dark:'linear-gradient(135deg,#0b0e1a,#2a1f5e)',
+  light:'linear-gradient(135deg,#f3f4fa,#d7dbf2)',
+  accent:'linear-gradient(135deg,#4a63d8,#8a5cf0)'};
+function cardMockDraw(){
+  const m=$("cardMock"); m.style.background=CARD_BG[reelTheme];
+  m.style.color=(reelTheme==='light')?'#14172b':'#fff';
+  $("cardMockTxt").textContent=$("reelCta").value.trim()||'Your call to action';
+}
+$("reelCta").oninput=cardMockDraw;
+$("rCardSecs").oninput=()=>$("rCardSecsLbl").textContent=$("rCardSecs").value+'s';
+/* trim scrubber on the user's own clip (all client-side) */
+function rTrimSetup(){
+  const f=$("file").files[0], box=$("rTrimBox");
+  if(!f){ box.style.display='none'; return; }
+  box.style.display='block';
+  const v=$("rTrimV");
+  if(v.dataset.for!==f.name+f.size){
+    v.src=URL.createObjectURL(f); v.dataset.for=f.name+f.size;
+    reelStart=0; reelEnd=0; rTrimLblDraw();
+    v.onloadedmetadata=()=>{ $("rScrub").max=v.duration.toFixed(1); };
+  }
+}
+$("rScrub").oninput=()=>{ const v=$("rTrimV"); if(v.duration) v.currentTime=+$("rScrub").value; };
+function rTrimLblDraw(){
+  const has=reelStart>0||reelEnd>0;
+  $("rTrimLbl").textContent=has?`${reelStart.toFixed(1)}s → ${reelEnd>0?reelEnd.toFixed(1)+'s':'end'}`:'Full clip';
+  $("rTrimClr").style.display=has?'':'none';
+}
+$("rSetIn").onclick=()=>{ reelStart=+$("rTrimV").currentTime||0;
+  if(reelEnd&&reelEnd<=reelStart) reelEnd=0; rTrimLblDraw(); };
+$("rSetOut").onclick=()=>{ const t=+$("rTrimV").currentTime||0;
+  if(t>reelStart+0.5){ reelEnd=t; rTrimLblDraw(); } };
+$("rTrimClr").onclick=()=>{ reelStart=0; reelEnd=0; rTrimLblDraw(); };
+capMockDraw(); cardMockDraw();
 
 /* ---------- accounts (magic-link) ---------- */
 let auth = JSON.parse(localStorage.getItem('cr_auth')||'null');   // {session,email,credits}
@@ -788,6 +921,7 @@ async function doUpload(){
     fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
     lastUp=f.name+"|"+f.size+"|"+f.lastModified;    // double-upload guard key
     track('upload_ok',{seconds:d.seconds,w:vw,h:vh});
+    if(task==='reel'){ try{ rTrimSetup(); }catch(e){} }
     if(rawBeforeURL) URL.revokeObjectURL(rawBeforeURL);
     rawBeforeURL=URL.createObjectURL(f); // last-resort Compare fallback (see compareReady)
     $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
@@ -839,14 +973,15 @@ async function run(kind){
   } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel;
     if(focusPt&&fitSel==='crop') body.focus=[focusPt.x,focusPt.y];
   } else if(task==='reel'){
-    body.ratio=reelRatio; body.fit='crop';
+    body.ratio=reelRatio; body.fit=reelFit;
     body.captions=(reelCapStyle!=='off');
-    if(reelCapStyle!=='off') body.cap_style=reelCapStyle;
-    const cta=$("reelCta").value.trim(); if(cta) body.cta=cta;
-    const t0=parseFloat($("reelT0").value), t1=parseFloat($("reelT1").value);
-    if(t0>0) body.trim_start=t0;
-    if(t1>0) body.trim_end=t1;
-    if(focusPt) body.focus=[focusPt.x,focusPt.y];
+    if(reelCapStyle!=='off'){ body.cap_style=reelCapStyle; body.cap_pos=reelCapPos;
+      body.cap_size=reelCapSize; body.cap_color=reelCapColor; }
+    const cta=$("reelCta").value.trim();
+    if(cta){ body.cta=cta; body.card_theme=reelTheme; body.card_secs=+$("rCardSecs").value; }
+    if(reelStart>0) body.trim_start=reelStart;
+    if(reelEnd>reelStart) body.trim_end=reelEnd;
+    if(focusPt&&reelFit==='crop') body.focus=[focusPt.x,focusPt.y];
   } else if(task==='blur'){
     const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');
     if(!tg.length&&maskEmpty()){alert("Tick faces or plates to blur — or brush a region first.");return;}

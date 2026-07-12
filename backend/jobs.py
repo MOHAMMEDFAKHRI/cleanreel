@@ -414,7 +414,10 @@ class JobManager:
                         job.message = f"Reel 2/3 — burning captions ({len(segs)} lines)..."
                         cap_out = os.path.join(tmpd, "captioned.mp4")
                         wr.caption_video(ref_out, cap_out, segs, preview=None,
-                                         style=cap_style)
+                                         style=cap_style,
+                                         pos=params.get("cap_pos", "bottom"),
+                                         size=params.get("cap_size", "m"),
+                                         color=params.get("cap_color", "white"))
                     else:
                         job.message = "Reel 2/3 — no speech found, skipping captions..."
                 # 4) optional CTA end card
@@ -423,7 +426,9 @@ class JobManager:
                     job.message = "Reel 3/3 — adding your end card..."
                     w2, h2, fps2, _n2 = wr.probe(cap_out)
                     card = os.path.join(tmpd, "card.mp4")
-                    wr.make_endcard(w2, h2, fps2, cta, card)
+                    wr.make_endcard(w2, h2, fps2, cta, card,
+                                    secs=float(params.get("card_secs", 2.5)),
+                                    theme=params.get("card_theme", "dark"))
                     wr.concat_videos(cap_out, card, out)
                 else:
                     shutil.copyfile(cap_out, out)   # copy, not move (EXDEV)

@@ -393,14 +393,23 @@ CAPTION_STYLES = {
 }
 
 
-def caption_video(path, out, segs, preview=None, progress_cb=None, style="clean"):
+CAPTION_SIZES = {"s": 0.8, "m": 1.0, "l": 1.28}
+CAPTION_COLORS = {"white": "&H00FFFFFF", "yellow": "&H0000FFFF",
+                  "green": "&H0000FF7F", "pink": "&H00B469FF"}
+
+
+def caption_video(path, out, segs, preview=None, progress_cb=None, style="clean",
+                  pos="bottom", size="m", color="white"):
     """Burn styled captions into the clip (ASS subtitles rendered by ffmpeg's
-    libass): white text, black outline (or boxed for the 'bold' preset),
-    bottom-centred, size scaled to the frame. Audio is re-muxed alongside.
-    One ffmpeg pass — no frame loop. style: clean | bold | minimal."""
+    libass). One ffmpeg pass — no frame loop.
+    style: clean | bold | minimal   pos: bottom | middle
+    size: s | m | l                 color: white | yellow | green | pink"""
     st = CAPTION_STYLES.get(str(style).lower(), CAPTION_STYLES["clean"])
+    mult = CAPTION_SIZES.get(str(size).lower(), 1.0)
+    col = CAPTION_COLORS.get(str(color).lower(), CAPTION_COLORS["white"])
+    align = 5 if str(pos).lower() == "middle" else 2   # ASS: 5=mid-center, 2=bottom-center
     w, h, fps, n = probe(path)
-    fs = max(16, int(h * st["fs"]))
+    fs = max(16, int(h * st["fs"] * mult))
     mv = max(18, int(h * st["mv"]))
     header = (
         "[Script Info]\nScriptType: v4.00+\n"
@@ -409,8 +418,8 @@ def caption_video(path, out, segs, preview=None, progress_cb=None, style="clean"
         "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, "
         "BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, "
         "MarginL, MarginR, MarginV\n"
-        f"Style: Cap,DejaVu Sans,{fs},&H00FFFFFF,&H00000000,{st['back']},"
-        f"{st['bold']},{st['border']},{max(2, fs // st['out_div'])},1,2,"
+        f"Style: Cap,DejaVu Sans,{fs},{col},&H00000000,{st['back']},"
+        f"{st['bold']},{st['border']},{max(2, fs // st['out_div'])},1,{align},"
         f"40,40,{mv}\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Text\n")
     lines = []
@@ -487,10 +496,19 @@ def _font_file():
     return None
 
 
-def make_endcard(w, h, fps, text, out, secs=2.5):
-    """Brand-dark gradient card with the user's CTA text centred, faded in,
-    with silent audio (so concat keeps consistent streams). Text is written
-    via drawtext textfile= — no filter-escaping pitfalls."""
+ENDCARD_THEMES = {           # (gradient c0, c1, text color)
+    "dark":   ("0x0b0e1a", "0x2a1f5e", "white"),
+    "light":  ("0xf3f4fa", "0xd7dbf2", "0x14172b"),
+    "accent": ("0x4a63d8", "0x8a5cf0", "white"),
+}
+
+
+def make_endcard(w, h, fps, text, out, secs=2.5, theme="dark"):
+    """Gradient CTA card with the user's text centred, faded in, with silent
+    audio (so concat keeps consistent streams). Text is written via drawtext
+    textfile= — no filter-escaping pitfalls. theme: dark | light | accent."""
+    c0, c1, tcol = ENDCARD_THEMES.get(str(theme).lower(), ENDCARD_THEMES["dark"])
+    secs = max(1.0, min(5.0, float(secs or 2.5)))
     lines = _endcard_lines(text)
     if not lines:
         raise RuntimeError("End-card text is empty.")
@@ -508,7 +526,7 @@ def make_endcard(w, h, fps, text, out, secs=2.5):
                 f.write(ln)
             ypos = f"(h-text_h)/2" if len(lines) == 1 else \
                    f"(h/2)-text_h{'-%d' % int(fs*0.15) if i == 0 else '+%d' % int(fs*0.95)}"
-            d = (f"drawtext=textfile='{tf}':fontcolor=white:fontsize={fs}"
+            d = (f"drawtext=textfile='{tf}':fontcolor={tcol}:fontsize={fs}"
                  f":x=(w-text_w)/2:y={ypos}")
             if font:
                 d += f":fontfile='{font}'"
@@ -517,7 +535,7 @@ def make_endcard(w, h, fps, text, out, secs=2.5):
         r = subprocess.run([
             ffmpeg_bin(), "-y", "-loglevel", "error",
             "-f", "lavfi",
-            "-i", f"gradients=s={w}x{h}:c0=0x0b0e1a:c1=0x2a1f5e:"
+            "-i", f"gradients=s={w}x{h}:c0={c0}:c1={c1}:"
                   f"x0=0:y0=0:x1={w}:y1={h}:speed=0.00001:"
                   f"duration={secs}:rate={fps:.3f}",
             "-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={secs}",
