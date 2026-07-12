@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 import cv2
 import numpy as np, base64
-from jobs import JobManager, MAX_EXPORT_SECONDS, PREVIEW_SECONDS
+from jobs import JobManager, MAX_EXPORT_SECONDS, PREVIEW_SECONDS, MAX_REEL_OUTPUT_SECONDS
 import watermark_remover as wr   # jobs.py puts the engine dir on sys.path on import
 import accounts                  # users, magic-link auth, credit balances, packs
 import admin_review              # owner QC panel; every route 404s unless WR_ADMIN_TOKEN is set
@@ -39,8 +39,14 @@ STORAGE = os.path.join(HERE, "storage")
 UPLOADS = os.path.join(STORAGE, "uploads")
 os.makedirs(UPLOADS, exist_ok=True)
 
-MAX_UPLOAD_MB = 200
-MAX_UPLOAD_SECONDS = MAX_EXPORT_SECONDS   # aligned: if it uploads, it can be exported
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "200"))
+MAX_UPLOAD_SECONDS = MAX_EXPORT_SECONDS   # cleanup modes: upload == export, so 60s
+# Reel creation samples from long source footage, so the reel flow accepts a
+# bigger/longer upload — the *rendered* reel is still bounded by which part(s)
+# the user selects (enforced at job submit against MAX_REEL_OUTPUT_SECONDS).
+MAX_REEL_UPLOAD_MB      = int(os.environ.get("MAX_REEL_UPLOAD_MB", "600"))
+MAX_REEL_UPLOAD_SECONDS = int(os.environ.get("MAX_REEL_UPLOAD_SECONDS", "900"))   # 15 min
+# NOTE: the reel *output* cap (MAX_REEL_OUTPUT_SECONDS) is enforced at job submit.
 
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
@@ -125,7 +131,10 @@ def health():
     # HEAD is allowed too: uptime monitors (UptimeRobot, etc.) probe with HEAD by
     # default — a GET-only route answers 405 and they wrongly flag the API "down".
     return {"ok": True, "preview_seconds": PREVIEW_SECONDS,
-            "max_export_seconds": MAX_EXPORT_SECONDS}
+            "max_export_seconds": MAX_EXPORT_SECONDS,
+            "max_reel_upload_seconds": MAX_REEL_UPLOAD_SECONDS,
+            "max_reel_upload_mb": MAX_REEL_UPLOAD_MB,
+            "max_reel_output_seconds": MAX_REEL_OUTPUT_SECONDS}
 
 class EmailReq(BaseModel):
     email: str
@@ -245,8 +254,13 @@ def file_exists(file_id: str):
 
 
 @app.post("/api/upload")
-async def upload(request: Request, file: UploadFile = File(...)):
+async def upload(request: Request, file: UploadFile = File(...), intent: str = "clean"):
     rate_limit(request, "upload", RATE_UPLOAD_PER_HOUR)
+    # 'reel' intent samples from long source footage, so it gets the bigger caps;
+    # every other flow keeps the tight 60s / 200 MB cleanup-tier limits.
+    reel = (intent or "").strip().lower() == "reel"
+    max_mb = MAX_REEL_UPLOAD_MB if reel else MAX_UPLOAD_MB
+    max_secs = MAX_REEL_UPLOAD_SECONDS if reel else MAX_UPLOAD_SECONDS
     ext = os.path.splitext(file.filename or "")[1].lower() or ".mp4"
     if ext not in (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"):
         raise HTTPException(400, "Unsupported video format.")
@@ -256,9 +270,9 @@ async def upload(request: Request, file: UploadFile = File(...)):
     with open(path, "wb") as f:
         while chunk := await file.read(1 << 20):
             size += len(chunk)
-            if size > MAX_UPLOAD_MB << 20:
+            if size > max_mb << 20:
                 f.close(); os.remove(path)
-                raise HTTPException(413, f"File too large (>{MAX_UPLOAD_MB} MB).")
+                raise HTTPException(413, f"File too large (>{max_mb} MB).")
             f.write(chunk)
     cap = cv2.VideoCapture(path)
     ok, _ = cap.read()
@@ -270,10 +284,12 @@ async def upload(request: Request, file: UploadFile = File(...)):
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)); h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
     seconds = round(n / max(fps, 1), 1)
-    if seconds > MAX_UPLOAD_SECONDS:
+    if seconds > max_secs:
         os.remove(path)
-        raise HTTPException(413, f"That clip is {seconds:.0f}s — the limit is {MAX_UPLOAD_SECONDS}s per video in this tier. Trim it and try again.")
-    FILES[fid] = {"path": path, "w": w, "h": h, "seconds": seconds, "fps": fps}
+        tail = "for reels" if reel else "in this tier"
+        raise HTTPException(413, f"That clip is {seconds:.0f}s — the limit is {max_secs}s per video {tail}. Trim it and try again.")
+    FILES[fid] = {"path": path, "w": w, "h": h, "seconds": seconds, "fps": fps,
+                  "intent": "reel" if reel else "clean"}
     return {"file_id": fid, "width": w, "height": h, "seconds": seconds}
 
 
@@ -401,8 +417,9 @@ class JobRequest(BaseModel):
     card_theme: str | None = None         # reel: 'dark' | 'light' | 'accent'
     card_secs: float | None = None        # reel: end-card duration 1..5s
     cta: str | None = None                # reel: end-card text (<= 80 chars)
-    trim_start: float | None = None       # reel: trim in (seconds)
-    trim_end: float | None = None         # reel: trim out (seconds)
+    trim_start: float | None = None       # reel: trim in (seconds) — legacy single range
+    trim_end: float | None = None         # reel: trim out (seconds) — legacy single range
+    segments: list[list[float]] | None = None  # reel: [[start,end], ...] ordered parts; overrides trim_*
     captions: bool = True                 # reel: burn captions (auto-skips if no speech)
 
 
@@ -418,6 +435,8 @@ def create_job(req: JobRequest, request: Request,
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
     task = (req.task or "remove").lower()
+    reel_segments = None        # reel: normalized [(start, end), ...] of selected parts
+    reel_out_seconds = None     # reel: total rendered length (sum of parts / trimmed span)
     if task not in ("remove", "erase", "enhance", "reframe", "blur", "captions", "reel"):
         raise HTTPException(400, "task must be remove | erase | enhance | reframe | blur | captions | reel.")
     if task == "erase" and not (req.mask or req.boxes):
@@ -451,10 +470,35 @@ def create_job(req: JobRequest, request: Request,
             raise HTTPException(400, "cap_color must be white | yellow | green | pink.")
         if (req.card_theme or "dark").lower() not in ("dark", "light", "accent"):
             raise HTTPException(400, "card_theme must be dark | light | accent.")
-        t0 = max(0.0, float(req.trim_start or 0.0))
-        t1 = float(req.trim_end) if req.trim_end else None
-        if t1 is not None and t1 <= t0 + 0.5:
-            raise HTTPException(400, "trim_end must be at least 0.5s after trim_start.")
+        # Which part(s) of the source become the reel. `segments` (multi-part,
+        # trim-anywhere) wins; otherwise fall back to the legacy single trim range.
+        src_secs = float(meta.get("seconds") or 0.0)
+        if req.segments:
+            segs = []
+            for pair in req.segments:
+                if not pair or len(pair) != 2:
+                    raise HTTPException(400, "Each segment must be [start, end] in seconds.")
+                s = max(0.0, float(pair[0])); e = float(pair[1])
+                if src_secs:
+                    s = min(s, src_secs); e = min(e, src_secs)
+                if e <= s + 0.3:
+                    raise HTTPException(400, "Each selected part must be at least 0.3s long.")
+                segs.append((round(s, 3), round(e, 3)))
+            if not segs:
+                raise HTTPException(400, "Add at least one part to your reel.")
+            if len(segs) > 20:
+                raise HTTPException(400, "Too many parts — keep it under 20.")
+            reel_segments = segs
+            reel_out_seconds = sum(e - s for s, e in segs)
+        else:
+            t0 = max(0.0, float(req.trim_start or 0.0))
+            t1 = float(req.trim_end) if req.trim_end else None
+            if t1 is not None and t1 <= t0 + 0.5:
+                raise HTTPException(400, "trim_end must be at least 0.5s after trim_start.")
+            end = t1 if t1 is not None else (src_secs or None)
+            reel_out_seconds = (end - t0) if end is not None else None
+        # NB: the total-length cap is enforced on EXPORT only (below). Previews
+        # always render just the first few seconds, so length must not block them.
 
     # Backpressure: one worker renders one job at a time, so a deep queue means
     # a silent multi-hour wait. Refuse early instead — and BEFORE any credit is
@@ -481,7 +525,11 @@ def create_job(req: JobRequest, request: Request,
     # also costs 2 — same logic as enhance: heavy pipeline, honest price.
     export_cost = 2 if task in ("enhance", "reel") else 1
     if req.mode == "export":                 # preview stays free & anonymous
-        if meta["seconds"] > MAX_EXPORT_SECONDS:
+        if task == "reel":
+            # Reels are capped by the *selected* footage, not the source length.
+            if reel_out_seconds is not None and reel_out_seconds > MAX_REEL_OUTPUT_SECONDS + 0.5:
+                raise HTTPException(413, f"Reel export limited to {MAX_REEL_OUTPUT_SECONDS}s of selected footage in this tier.")
+        elif meta["seconds"] > MAX_EXPORT_SECONDS:
             raise HTTPException(413, f"Export limited to {MAX_EXPORT_SECONDS}s in this tier.")
         email = current_user(authorization)
         if not email:
@@ -552,10 +600,14 @@ def create_job(req: JobRequest, request: Request,
         cta = "".join(ch for ch in (req.cta or "") if ch.isprintable())[:80].strip()
         if cta:
             params["cta"] = cta
-        if req.trim_start:
-            params["trim_start"] = max(0.0, float(req.trim_start))
-        if req.trim_end:
-            params["trim_end"] = float(req.trim_end)
+        # Prefer the normalized multi-part selection; keep single-range for back-compat.
+        if reel_segments is not None:
+            params["segments"] = reel_segments
+        else:
+            if req.trim_start:
+                params["trim_start"] = max(0.0, float(req.trim_start))
+            if req.trim_end:
+                params["trim_end"] = float(req.trim_end)
     # Attach the signed-in user (export always; preview too when signed in) so
     # the account page can list their recent work.
     owner = refund_email or current_user(authorization)

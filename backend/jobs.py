@@ -25,6 +25,10 @@ import admin_review              # noqa: E402  (owner QC panel; inert unless WR_
 
 PREVIEW_SECONDS = 4
 MAX_EXPORT_SECONDS = 60          # single clip-length cap for this tier (upload == export)
+# Reel creation samples from a long source clip, so what's capped is the
+# *rendered* reel (the selected part[s]) — NOT the upload length. Defaults to the
+# same 60s economics as a normal export; raise via env when the tier allows it.
+MAX_REEL_OUTPUT_SECONDS = int(os.environ.get("MAX_REEL_OUTPUT_SECONDS", str(MAX_EXPORT_SECONDS)))
 
 # Storage janitor: uploads & results are transient working files. Anything older
 # than STORAGE_TTL_HOURS is deleted. This number is a PROMISE made on
@@ -376,15 +380,49 @@ class JobManager:
             cap_style = params.get("cap_style", "clean")
             cta = (params.get("cta") or "").strip()
             t0, t1 = params.get("trim_start"), params.get("trim_end")
+            segments = params.get("segments")   # ordered [(start, end), ...] parts
             tmpd = tempfile.mkdtemp()
             try:
                 stage = video
-                # 1) optional trim (frame-accurate)
-                if t0 or t1:
+                # 1) cut the source down to the wanted part(s), frame-accurate.
+                if segments:
+                    if job.mode == "preview":
+                        # Preview just the opening of the first selected part — fast,
+                        # and representative of how the reel will look.
+                        s0, e0 = segments[0]
+                        e0 = min(e0, s0 + max(PREVIEW_SECONDS, 1.0))
+                        job.progress = 0.06
+                        job.message = "Reel — preparing preview..."
+                        cut = os.path.join(tmpd, "seg_preview.mp4")
+                        wr.trim_video(stage, cut, start=s0, end=e0)
+                        stage = cut
+                    else:
+                        job.progress = 0.06
+                        job.message = (f"Reel — cutting {len(segments)} selected "
+                                       f"part{'s' if len(segments) != 1 else ''}...")
+                        parts = []
+                        for i, seg in enumerate(segments):
+                            s, e = seg
+                            p = os.path.join(tmpd, f"seg{i}.mp4")
+                            wr.trim_video(stage, p, start=s, end=e)
+                            parts.append(p)
+                        if len(parts) == 1:
+                            stage = parts[0]
+                        else:
+                            joined = os.path.join(tmpd, "joined.mp4")
+                            wr.concat_many(parts, joined)
+                            stage = joined
+                elif t0 or t1:
                     job.progress = 0.06
                     job.message = "Reel — trimming your clip..."
+                    # On preview, don't re-encode a long span just to sample a few
+                    # seconds of it — cap the trim to the preview window.
+                    end = t1
+                    if job.mode == "preview":
+                        cap_e = (t0 or 0.0) + max(PREVIEW_SECONDS, 1.0)
+                        end = cap_e if (end is None or end > cap_e) else end
                     trimmed = os.path.join(tmpd, "trim.mp4")
-                    wr.trim_video(stage, trimmed, start=t0, end=t1)
+                    wr.trim_video(stage, trimmed, start=t0, end=end)
                     stage = trimmed
                 # 2) reframe (smart crop / blurred fill)
                 job.progress = 0.12

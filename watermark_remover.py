@@ -563,6 +563,43 @@ def concat_videos(a, b, out):
         raise RuntimeError("Joining the end card failed.")
 
 
+def concat_many(paths, out):
+    """Concatenate N clips of the SAME dimensions into one file (re-encode; audio
+    resampled to a common rate). A single input is just copied. Used to stitch
+    several trimmed segments into one reel. Robust to silent sources: if the
+    audio-aware join fails (e.g. a clip has no audio track), it retries video-only."""
+    paths = [p for p in paths if p]
+    if not paths:
+        raise RuntimeError("No clips to join.")
+    if len(paths) == 1:
+        shutil.copyfile(paths[0], out)
+        return
+    n = len(paths)
+
+    def _run(with_audio):
+        args = [ffmpeg_bin(), "-y", "-loglevel", "error"]
+        for p in paths:
+            args += ["-i", p]
+        if with_audio:
+            fc = "".join(f"[{i}:a]aresample=48000[a{i}];" for i in range(n))
+            fc += "".join(f"[{i}:v][a{i}]" for i in range(n))
+            fc += f"concat=n={n}:v=1:a=1[v][a]"
+            maps = ["-map", "[v]", "-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+        else:
+            fc = "".join(f"[{i}:v]" for i in range(n)) + f"concat=n={n}:v=1:a=0[v]"
+            maps = ["-map", "[v]"]
+        args += ["-filter_complex", fc] + maps + [
+            "-c:v", "libx264", "-crf", "17", "-preset", "medium",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", out]
+        return subprocess.run(args).returncode
+
+    rc = _run(True)
+    if rc != 0 or not os.path.isfile(out) or os.path.getsize(out) < 4096:
+        _run(False)                       # a source had no audio — join video only
+    if not os.path.isfile(out) or os.path.getsize(out) < 4096:
+        raise RuntimeError("Joining your selected parts failed.")
+
+
 def _deepfilter_bin():
     """Path to the deep-filter CLI (DeepFilterNet's MIT/Apache-licensed Rust
     binary, fetched at Docker build time) or None if unavailable."""
