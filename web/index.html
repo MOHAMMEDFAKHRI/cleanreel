@@ -175,6 +175,7 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
       <button class="tool mode" data-task="reframe">📱 Reframe</button>
       <button class="tool mode" data-task="blur">🕶 Privacy blur</button>
       <button class="tool mode" data-task="captions">💬 Captions</button>
+      <button class="tool mode" data-task="reel">🎬 Make a Reel</button>
     </div>
     <div class="grid2">
       <div>
@@ -248,6 +249,31 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
             <span class="pill" id="blurVal">60%</span>
           </div>
           <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
+        </div>
+        <div id="reelWrap" style="display:none">
+          <div class="optrow"><span class="pill">Shape</span>
+            <button class="tool rlr active" data-ratio="9:16">9:16 Reels/TikTok</button>
+            <button class="tool rlr" data-ratio="1:1">1:1 square</button>
+            <button class="tool rlr" data-ratio="4:5">4:5 feed</button>
+          </div>
+          <div class="optrow"><span class="pill">Captions</span>
+            <button class="tool rls active" data-capstyle="clean">Clean</button>
+            <button class="tool rls" data-capstyle="bold">Bold</button>
+            <button class="tool rls" data-capstyle="minimal">Minimal</button>
+            <button class="tool rls" data-capstyle="off">Off</button>
+          </div>
+          <div class="optrow"><span class="pill">Trim</span>
+            <input id="reelT0" type="number" min="0" step="0.5" placeholder="start s" style="width:84px"/>
+            <input id="reelT1" type="number" min="0" step="0.5" placeholder="end s" style="width:84px"/>
+            <span class="pill">optional</span>
+          </div>
+          <div class="optrow"><span class="pill">End card</span>
+            <input id="reelCta" type="text" maxlength="80" placeholder="e.g. Shop now → yourbrand.com (optional)" style="flex:1;min-width:200px"/>
+          </div>
+          <p class="hint">One pass: trim → reframe with AI subject tracking → AI captions
+            burned in → your end card appended. Speech is auto-detected — music-only clips
+            just skip the captions. Tap the frame to pin the crop, like Reframe.
+            Export uses <b>2 credits</b> (it runs two AI stages); previews are free.</p>
         </div>
         <div id="captionsWrap" style="display:none">
           <p class="hint">Speech is transcribed by AI (language auto-detected) and burned in as
@@ -408,14 +434,17 @@ const TASK_COPY={
     need:'Upload a video — faces are blurred automatically; you can brush extra areas too.',
     hint:'Faces (and plates, if ticked) are found and blurred in every frame — hit <b>👁 Preview detection</b> to see what\'s caught. Brush anything else (a name tag, a screen, an address) and it\'s blurred too. If a brushed region moves, tick <b>Moving region</b> below.'},
   captions:{tag:'Step 2 · Caption options',
-    need:'Upload a video with speech — captions are generated automatically.'}
+    need:'Upload a video with speech — captions are generated automatically.'},
+  reel:{tag:'Step 2 · Reel options',
+    need:'Upload any footage — old, landscape, watermark-free — and get an ad-ready vertical reel: reframed, captioned, with your call-to-action at the end.',
+    hint:'Optional: <b>tap the frame</b> to pin the crop centre — otherwise smart tracking follows faces &amp; motion, exactly like Reframe.'}
 };
 let savedMask=null;                  // remove/erase paint, parked while in reframe
 function setTask(t){
   const was=task; task=t;
   document.querySelectorAll('#modes .mode').forEach(b=>b.classList.toggle('active',b.dataset.task===t));
   const ed=(t==='remove'||t==='erase'||t==='blur');// mask-editor modes
-  const canv=ed||t==='reframe';                    // modes that show the canvas
+  const canv=ed||t==='reframe'||t==='reel';        // modes that show the canvas
   $("step2Tag").textContent=TASK_COPY[t].tag;
   $("needUpload").innerHTML=TASK_COPY[t].need;
   $("needUpload").style.display=(canv&&!fileId)?'block':'none';
@@ -424,6 +453,7 @@ function setTask(t){
   $("reframeWrap").style.display=(t==='reframe')?'block':'none';
   $("blurWrap").style.display=(t==='blur')?'block':'none';
   $("captionsWrap").style.display=(t==='captions')?'block':'none';
+  $("reelWrap").style.display=(t==='reel')?'block':'none';
   $("toolbar").style.display=ed?'':'none';
   $("tAuto").style.display=(t==='remove')?'':'none';
   $("tFaces").style.display=(t==='blur')?'':'none';
@@ -431,12 +461,13 @@ function setTask(t){
   $("trackLbl").textContent=(t==='blur')
     ?'Moving region — track my brushed area across the video'
     :'Moving object — track it across the video';
-  maskC.style.opacity=(t==='reframe')?'0.9':'0.5'; // focus pin should read clearly
+  const pin=(t==='reframe'||t==='reel'), wasPin=(was==='reframe'||was==='reel');
+  maskC.style.opacity=pin?'0.9':'0.5';             // focus pin should read clearly
   if(canv){ $("editorHint").innerHTML=TASK_COPY[t].hint; if(fileId) loadBase(); }
-  if(was!=='reframe'&&t==='reframe'){              // park the paint, show the pin
+  if(!wasPin&&pin){                                // park the paint, show the pin
     if(maskC.width&&maskC.height) savedMask=mctx.getImageData(0,0,maskC.width,maskC.height);
     drawFocus();
-  } else if(was==='reframe'&&t!=='reframe'){       // restore the parked paint
+  } else if(wasPin&&!pin){                         // restore the parked paint
     mctx.clearRect(0,0,maskC.width,maskC.height);
     if(savedMask){ try{ mctx.putImageData(savedMask,0,0); }catch(e){} savedMask=null; }
   }
@@ -456,6 +487,13 @@ document.querySelectorAll('#blurWrap .bs').forEach(b=>b.onclick=()=>{
   blurStyle=b.dataset.style;
   document.querySelectorAll('#blurWrap .bs').forEach(x=>x.classList.toggle('active',x===b)); });
 $("blurAmt").oninput=()=>$("blurVal").textContent=$("blurAmt").value+'%';
+let reelRatio='9:16', reelCapStyle='clean';
+document.querySelectorAll('#reelWrap .rlr').forEach(b=>b.onclick=()=>{
+  reelRatio=b.dataset.ratio;
+  document.querySelectorAll('#reelWrap .rlr').forEach(x=>x.classList.toggle('active',x===b)); });
+document.querySelectorAll('#reelWrap .rls').forEach(b=>b.onclick=()=>{
+  reelCapStyle=b.dataset.capstyle;
+  document.querySelectorAll('#reelWrap .rls').forEach(x=>x.classList.toggle('active',x===b)); });
 
 /* ---------- accounts (magic-link) ---------- */
 let auth = JSON.parse(localStorage.getItem('cr_auth')||'null');   // {session,email,credits}
@@ -534,7 +572,7 @@ async function handleHash(){
   } else if(h==='#paid'){ history.replaceState(null,'','#tool'); await refreshMe(); $("acctInfo").innerHTML+=' <b>— thanks, credits added!</b>'; }
   else if(h.startsWith('#tool=')){                 // deep link from SEO pages: /#tool=remove
     const t=h.slice(6);
-    if(['remove','erase','enhance','reframe','blur','captions'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
+    if(['remove','erase','enhance','reframe','blur','captions','reel'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
     history.replaceState(null,'','#tool');
     try{ document.getElementById('tool').scrollIntoView(); }catch(e){}
   }
@@ -584,7 +622,7 @@ function stroke(a,b){ mctx.globalCompositeOperation=(tool==="erase")?"destinatio
 
 maskC.addEventListener("pointerdown",e=>{ if(!fileId)return; e.preventDefault();
   const p=pos(e);
-  if(task==='reframe'){                 // tap = pin the crop focus point
+  if(task==='reframe'||task==='reel'){  // tap = pin the crop focus point
     setFocus({x:Math.min(1,Math.max(0,p.x/(maskC.width||1))),
               y:Math.min(1,Math.max(0,p.y/(maskC.height||1)))});
     return;
@@ -617,7 +655,7 @@ function drawFocus(){
   mctx.stroke();
 }
 function setFocus(p){
-  focusPt=p; if(task==='reframe') drawFocus();
+  focusPt=p; if(task==='reframe'||task==='reel') drawFocus();
   $("fClear").style.display=p?'':'none';
   $("focusLbl").textContent=p
     ? `Focus: pinned at ${Math.round(p.x*100)}%, ${Math.round(p.y*100)}% — the crop stays locked there`
@@ -772,6 +810,15 @@ async function run(kind){
     body.strength=(+$("sharpAmt").value)/100;
   } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel;
     if(focusPt&&fitSel==='crop') body.focus=[focusPt.x,focusPt.y];
+  } else if(task==='reel'){
+    body.ratio=reelRatio; body.fit='crop';
+    body.captions=(reelCapStyle!=='off');
+    if(reelCapStyle!=='off') body.cap_style=reelCapStyle;
+    const cta=$("reelCta").value.trim(); if(cta) body.cta=cta;
+    const t0=parseFloat($("reelT0").value), t1=parseFloat($("reelT1").value);
+    if(t0>0) body.trim_start=t0;
+    if(t1>0) body.trim_end=t1;
+    if(focusPt) body.focus=[focusPt.x,focusPt.y];
   } else if(task==='blur'){
     const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');
     if(!tg.length&&maskEmpty()){alert("Tick faces or plates to blur — or brush a region first.");return;}
@@ -783,6 +830,7 @@ async function run(kind){
     enhance:"Submitting — enhancement starts in a moment…",
     blur:"Submitting — finding faces/plates to blur…",
     captions:"Submitting — transcription starts in a moment…",
+    reel:"Submitting — building your reel (reframe → captions → end card)…",
     reframe:(focusPt&&fitSel==='crop'&&task==='reframe')
       ?"Submitting — cropping around your focus point…"
       :"Submitting — smart-tracking the subject…"};
@@ -903,7 +951,7 @@ function showView(mode){                   // 'result' | 'compare'
   const cmp=(mode==='compare'&&afterURL&&beforeURL);
   $("vResult").classList.toggle('active',!cmp);
   $("vCompare").classList.toggle('active',!!cmp);
-  const slide=(cmpTask!=='reframe');       // reframe changes aspect -> side-by-side
+  const slide=(cmpTask!=='reframe'&&cmpTask!=='reel'); // aspect changes -> side-by-side
   $("out").style.display=cmp?'none':'';
   $("cmpSlide").style.display=(cmp&&slide)?'block':'none';
   $("cmpSbs").style.display=(cmp&&!slide)?'flex':'none';
@@ -961,7 +1009,7 @@ slideEl.addEventListener('pointermove',e=>{ if(cmpDrag) cmpFromEvent(e); });
 ['pointerup','pointercancel'].forEach(ev=>slideEl.addEventListener(ev,()=>cmpDrag=false));
 
 /* deep-link from SEO pages: /#tool=erase|blur|enhance|reframe|remove */
-const _deepTask=(location.hash.match(/^#tool=(remove|erase|enhance|reframe|blur)$/)||[])[1];
+const _deepTask=(location.hash.match(/^#tool=(remove|erase|enhance|reframe|blur|captions|reel)$/)||[])[1];
 setTask(_deepTask||'remove');   // sync the per-mode controls once at startup
 if(_deepTask){ history.replaceState(null,'','#tool');
   setTimeout(()=>{ const el=document.getElementById('tool');

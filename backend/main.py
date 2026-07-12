@@ -394,6 +394,11 @@ class JobRequest(BaseModel):
     targets: list[str] | None = None      # blur: subset of {'face', 'plate'}
     style: str | None = None              # blur: 'blur' | 'pixelate'
     clean_audio: bool = False             # any task: denoise audio (DeepFilterNet)
+    cap_style: str | None = None          # reel: caption preset 'clean' | 'bold' | 'minimal'
+    cta: str | None = None                # reel: end-card text (<= 80 chars)
+    trim_start: float | None = None       # reel: trim in (seconds)
+    trim_end: float | None = None         # reel: trim out (seconds)
+    captions: bool = True                 # reel: burn captions (auto-skips if no speech)
 
 
 @app.post("/api/jobs")
@@ -408,8 +413,8 @@ def create_job(req: JobRequest, request: Request,
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
     task = (req.task or "remove").lower()
-    if task not in ("remove", "erase", "enhance", "reframe", "blur", "captions"):
-        raise HTTPException(400, "task must be remove | erase | enhance | reframe | blur | captions.")
+    if task not in ("remove", "erase", "enhance", "reframe", "blur", "captions", "reel"):
+        raise HTTPException(400, "task must be remove | erase | enhance | reframe | blur | captions | reel.")
     if task == "erase" and not (req.mask or req.boxes):
         raise HTTPException(400, "Brush over what you want erased first.")
     if task == "blur":
@@ -421,7 +426,7 @@ def create_job(req: JobRequest, request: Request,
             raise HTTPException(400, "style must be 'blur' or 'pixelate'.")
         if not blur_targets and not (req.mask or req.boxes):
             raise HTTPException(400, "Pick faces/plates to blur — or brush a region first.")
-    if task == "reframe":
+    if task in ("reframe", "reel"):
         try:
             wr.parse_ratio(req.ratio)
         except ValueError as e:
@@ -430,6 +435,13 @@ def create_job(req: JobRequest, request: Request,
             raise HTTPException(400, "fit must be 'crop' or 'blur'.")
         if req.focus is not None and len(req.focus) != 2:
             raise HTTPException(400, "focus must be [x, y] with 0..1 values.")
+    if task == "reel":
+        if (req.cap_style or "clean").lower() not in ("clean", "bold", "minimal"):
+            raise HTTPException(400, "cap_style must be clean | bold | minimal.")
+        t0 = max(0.0, float(req.trim_start or 0.0))
+        t1 = float(req.trim_end) if req.trim_end else None
+        if t1 is not None and t1 <= t0 + 0.5:
+            raise HTTPException(400, "trim_end must be at least 0.5s after trim_start.")
 
     # Backpressure: one worker renders one job at a time, so a deep queue means
     # a silent multi-hour wait. Refuse early instead — and BEFORE any credit is
@@ -452,7 +464,9 @@ def create_job(req: JobRequest, request: Request,
     # GFPGAN) — by far the heaviest export — so it costs 2 credits; everything
     # else stays 1. use_credits is all-or-nothing: an insufficient balance
     # deducts nothing.
-    export_cost = 2 if task == "enhance" else 1
+    # Reel chains two GPU-backed stages (reframe + whisper captions), so it
+    # also costs 2 — same logic as enhance: heavy pipeline, honest price.
+    export_cost = 2 if task in ("enhance", "reel") else 1
     if req.mode == "export":                 # preview stays free & anonymous
         if meta["seconds"] > MAX_EXPORT_SECONDS:
             raise HTTPException(413, f"Export limited to {MAX_EXPORT_SECONDS}s in this tier.")
@@ -460,7 +474,7 @@ def create_job(req: JobRequest, request: Request,
         if not email:
             raise HTTPException(401, "Please sign in to export.")
         if not accounts.use_credits(email, export_cost):
-            raise HTTPException(402, ("Enhance exports use 2 credits — you don't have "
+            raise HTTPException(402, (f"This export uses {export_cost} credits — you don't have "
                                       "enough. Buy a pack to export the full video."
                                       if export_cost > 1 else
                                       "Out of export credits. Buy a pack to export the full video."))
@@ -508,6 +522,22 @@ def create_job(req: JobRequest, request: Request,
         if req.focus is not None:
             params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
                                max(0.0, min(1.0, float(req.focus[1]))))
+    elif task == "reel":
+        params["ratio"] = req.ratio
+        params["fit"] = req.fit
+        if req.focus is not None:
+            params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
+                               max(0.0, min(1.0, float(req.focus[1]))))
+        params["cap_style"] = (req.cap_style or "clean").lower()
+        params["captions"] = bool(req.captions)
+        # CTA: strip control characters, hard cap at 80 chars (2 lines on card)
+        cta = "".join(ch for ch in (req.cta or "") if ch.isprintable())[:80].strip()
+        if cta:
+            params["cta"] = cta
+        if req.trim_start:
+            params["trim_start"] = max(0.0, float(req.trim_start))
+        if req.trim_end:
+            params["trim_end"] = float(req.trim_end)
     job_id = manager.submit(req.mode, params, key=dup_key)
     print(f"[job] mode={req.mode} task={task} id={job_id}", flush=True)
     return {"job_id": job_id, "mode": req.mode, "task": task}

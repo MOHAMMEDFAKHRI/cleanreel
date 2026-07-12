@@ -357,6 +357,68 @@ class JobManager:
             job.result_path = out
             return
 
+        # ---------- REEL: chained pipeline — trim -> reframe -> captions -> CTA ----------
+        if task == "reel":
+            ratio = params.get("ratio", "9:16"); fit = params.get("fit", "crop")
+            cap_style = params.get("cap_style", "clean")
+            cta = (params.get("cta") or "").strip()
+            t0, t1 = params.get("trim_start"), params.get("trim_end")
+            tmpd = tempfile.mkdtemp()
+            try:
+                stage = video
+                # 1) optional trim (frame-accurate)
+                if t0 or t1:
+                    job.progress = 0.06
+                    job.message = "Reel — trimming your clip..."
+                    trimmed = os.path.join(tmpd, "trim.mp4")
+                    wr.trim_video(stage, trimmed, start=t0, end=t1)
+                    stage = trimmed
+                # 2) reframe (smart crop / blurred fill)
+                job.progress = 0.12
+                job.message = f"Reel 1/3 — reframing to {ratio}..."
+                ref_out = os.path.join(tmpd, "reframed.mp4")
+                wr.reframe_video(stage, ref_out, ratio=ratio, fit=fit,
+                                 preview=seconds,
+                                 max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
+                                 focus=params.get("focus"),
+                                 progress_cb=lambda d, t:
+                                     setattr(job, "progress",
+                                             min(0.5, 0.12 + 0.38 * d / max(1, t))))
+                # 3) captions (skips gracefully when there's no speech —
+                #    a music-only reel must not fail the whole pipeline)
+                cap_out = ref_out
+                if params.get("captions", True):
+                    job.progress = 0.52
+                    job.message = "Reel 2/3 — transcribing speech (AI)..."
+                    segs = []
+                    try:
+                        segs, _lang = wr.transcribe_audio(ref_out, tmpd)
+                    except Exception as e:
+                        print(f"[reel] captions skipped: {e}", flush=True)
+                    if segs:
+                        job.srt = wr.segments_to_srt(segs)
+                        job.progress = 0.62
+                        job.message = f"Reel 2/3 — burning captions ({len(segs)} lines)..."
+                        cap_out = os.path.join(tmpd, "captioned.mp4")
+                        wr.caption_video(ref_out, cap_out, segs, preview=None,
+                                         style=cap_style)
+                    else:
+                        job.message = "Reel 2/3 — no speech found, skipping captions..."
+                # 4) optional CTA end card
+                if cta:
+                    job.progress = 0.85
+                    job.message = "Reel 3/3 — adding your end card..."
+                    w2, h2, fps2, _n2 = wr.probe(cap_out)
+                    card = os.path.join(tmpd, "card.mp4")
+                    wr.make_endcard(w2, h2, fps2, cta, card)
+                    wr.concat_videos(cap_out, card, out)
+                else:
+                    shutil.copyfile(cap_out, out)   # copy, not move (EXDEV)
+                job.result_path = out
+                return
+            finally:
+                shutil.rmtree(tmpd, ignore_errors=True)
+
         # ---------- REFRAME: aspect conversion with subject tracking ----------
         if task == "reframe":
             ratio = params.get("ratio", "9:16"); fit = params.get("fit", "crop")

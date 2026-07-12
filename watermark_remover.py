@@ -381,21 +381,37 @@ def _ts_ass(t):
     return f"{h:d}:{m:02d}:{s:05.2f}"
 
 
-def caption_video(path, out, segs, preview=None, progress_cb=None):
+# Caption style presets (CLE-33). fs/mv are fractions of frame height;
+# border 1 = outline+shadow, 3 = opaque box behind the text (uses BackColour).
+CAPTION_STYLES = {
+    "clean":   dict(fs=0.045, bold=1, out_div=12, border=1, mv=0.060,
+                    back="&H7F000000"),
+    "bold":    dict(fs=0.058, bold=1, out_div=9,  border=3, mv=0.070,
+                    back="&H55000000"),
+    "minimal": dict(fs=0.034, bold=0, out_div=16, border=1, mv=0.045,
+                    back="&H7F000000"),
+}
+
+
+def caption_video(path, out, segs, preview=None, progress_cb=None, style="clean"):
     """Burn styled captions into the clip (ASS subtitles rendered by ffmpeg's
-    libass): bold white text, black outline, bottom-centred, size scaled to
-    the frame. Audio is re-muxed alongside. One ffmpeg pass — no frame loop."""
+    libass): white text, black outline (or boxed for the 'bold' preset),
+    bottom-centred, size scaled to the frame. Audio is re-muxed alongside.
+    One ffmpeg pass — no frame loop. style: clean | bold | minimal."""
+    st = CAPTION_STYLES.get(str(style).lower(), CAPTION_STYLES["clean"])
     w, h, fps, n = probe(path)
-    fs = max(18, int(h * 0.045))
-    mv = max(20, int(h * 0.06))
+    fs = max(16, int(h * st["fs"]))
+    mv = max(18, int(h * st["mv"]))
     header = (
         "[Script Info]\nScriptType: v4.00+\n"
         f"PlayResX: {w}\nPlayResY: {h}\nWrapStyle: 0\n\n"
         "[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, "
-        "BackColour, Bold, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
-        f"Style: Cap,DejaVu Sans,{fs},&H00FFFFFF,&H00000000,&H7F000000,"
-        f"1,{max(2, fs // 12)},1,2,40,40,{mv}\n\n"
+        "BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, "
+        "MarginL, MarginR, MarginV\n"
+        f"Style: Cap,DejaVu Sans,{fs},&H00FFFFFF,&H00000000,{st['back']},"
+        f"{st['bold']},{st['border']},{max(2, fs // st['out_div'])},1,2,"
+        f"40,40,{mv}\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Text\n")
     lines = []
     for s in segs:
@@ -429,6 +445,104 @@ def caption_video(path, out, segs, preview=None, progress_cb=None):
     if progress_cb:
         progress_cb(1, 1)
     print(f"done -> {out}")
+
+
+def trim_video(src, out, start=None, end=None):
+    """Frame-accurate trim (re-encode, CRF 16). start/end in seconds; either
+    may be None. Raises on failure or a resulting clip under 0.5s."""
+    args = [ffmpeg_bin(), "-y", "-loglevel", "error", "-i", src]
+    if start:
+        args += ["-ss", f"{max(0.0, float(start)):.3f}"]
+    if end:
+        args += ["-to", f"{float(end):.3f}"]
+    args += ["-c:v", "libx264", "-crf", "16", "-preset", "fast",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+             "-movflags", "+faststart", out]
+    r = subprocess.run(args)
+    if r.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 4096:
+        raise RuntimeError("Trim failed — check the start/end times.")
+
+
+def _endcard_lines(text, max_chars=26):
+    """Word-wrap CTA text to at most 2 centred lines."""
+    words = str(text).split()
+    lines, cur = [], ""
+    for wd in words:
+        if len(cur) + len(wd) + 1 <= max_chars or not cur:
+            cur = (cur + " " + wd).strip()
+        else:
+            lines.append(cur); cur = wd
+        if len(lines) == 2:
+            break
+    if cur and len(lines) < 2:
+        lines.append(cur)
+    return lines[:2]
+
+
+def _font_file():
+    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def make_endcard(w, h, fps, text, out, secs=2.5):
+    """Brand-dark gradient card with the user's CTA text centred, faded in,
+    with silent audio (so concat keeps consistent streams). Text is written
+    via drawtext textfile= — no filter-escaping pitfalls."""
+    lines = _endcard_lines(text)
+    if not lines:
+        raise RuntimeError("End-card text is empty.")
+    # Size to the frame, then clamp so the LONGEST line fits inside ~92% of the
+    # width (DejaVu Sans Bold advance ≈ 0.62 em): fs <= 0.92*w / (0.62*len).
+    longest = max(len(ln) for ln in lines)
+    fs = max(20, min(int(min(w, h) * 0.075), int(w * 1.48 / max(1, longest))))
+    font = _font_file()
+    tmp = tempfile.mkdtemp()
+    try:
+        draws = []
+        for i, ln in enumerate(lines):
+            tf = os.path.join(tmp, f"l{i}.txt")
+            with open(tf, "w", encoding="utf-8") as f:
+                f.write(ln)
+            ypos = f"(h-text_h)/2" if len(lines) == 1 else \
+                   f"(h/2)-text_h{'-%d' % int(fs*0.15) if i == 0 else '+%d' % int(fs*0.95)}"
+            d = (f"drawtext=textfile='{tf}':fontcolor=white:fontsize={fs}"
+                 f":x=(w-text_w)/2:y={ypos}")
+            if font:
+                d += f":fontfile='{font}'"
+            draws.append(d)
+        vf = ",".join(draws) + f",fade=t=in:st=0:d=0.4,format=yuv420p"
+        r = subprocess.run([
+            ffmpeg_bin(), "-y", "-loglevel", "error",
+            "-f", "lavfi",
+            "-i", f"gradients=s={w}x{h}:c0=0x0b0e1a:c1=0x2a1f5e:"
+                  f"x0=0:y0=0:x1={w}:y1={h}:speed=0.00001:"
+                  f"duration={secs}:rate={fps:.3f}",
+            "-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={secs}",
+            "-vf", vf, "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+            "-c:a", "aac", "-b:a", "128k", "-shortest", out])
+        if r.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 2048:
+            raise RuntimeError("End-card render failed.")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def concat_videos(a, b, out):
+    """Concatenate two clips of the SAME dimensions (re-encode; audio
+    resampled to a common rate so mismatched sources still join cleanly)."""
+    r = subprocess.run([
+        ffmpeg_bin(), "-y", "-loglevel", "error", "-i", a, "-i", b,
+        "-filter_complex",
+        "[0:a]aresample=48000[a0];[1:a]aresample=48000[a1];"
+        "[0:v][a0][1:v][a1]concat=n=2:v=1:a=1[v][a]",
+        "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-crf", "17", "-preset", "medium",
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart", out])
+    if r.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 4096:
+        raise RuntimeError("Joining the end card failed.")
 
 
 def _deepfilter_bin():
