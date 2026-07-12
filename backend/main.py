@@ -421,6 +421,7 @@ class JobRequest(BaseModel):
     trim_end: float | None = None         # reel: trim out (seconds) — legacy single range
     segments: list[list[float]] | None = None  # reel: [[start,end], ...] ordered parts; overrides trim_*
     captions: bool = True                 # reel: burn captions (auto-skips if no speech)
+    rotate: str | None = None             # reel: 'auto' | 'left' | 'right' | '180'
 
 
 @app.post("/api/jobs")
@@ -470,6 +471,8 @@ def create_job(req: JobRequest, request: Request,
             raise HTTPException(400, "cap_color must be white | yellow | green | pink.")
         if (req.card_theme or "dark").lower() not in ("dark", "light", "accent"):
             raise HTTPException(400, "card_theme must be dark | light | accent.")
+        if (req.rotate or "auto").lower() not in ("auto", "none", "left", "right", "180"):
+            raise HTTPException(400, "rotate must be auto | left | right | 180.")
         # Which part(s) of the source become the reel. `segments` (multi-part,
         # trim-anywhere) wins; otherwise fall back to the legacy single trim range.
         src_secs = float(meta.get("seconds") or 0.0)
@@ -596,6 +599,9 @@ def create_job(req: JobRequest, request: Request,
         params["card_theme"] = (req.card_theme or "dark").lower()
         params["card_secs"] = max(1.0, min(5.0, float(req.card_secs or 2.5)))
         params["captions"] = bool(req.captions)
+        rot = (req.rotate or "auto").lower()
+        if rot in ("left", "right", "180"):
+            params["rotate"] = rot
         # CTA: strip control characters, hard cap at 80 chars (2 lines on card)
         cta = "".join(ch for ch in (req.cta or "") if ch.isprintable())[:80].strip()
         if cta:

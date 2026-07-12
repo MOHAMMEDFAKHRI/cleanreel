@@ -408,6 +408,12 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
               <button class="tool rlf active" data-fit="crop">🎯 Smart crop</button>
               <button class="tool rlf" data-fit="blur">🌫 Fit + blurred bars</button>
             </div>
+            <div class="optrow"><span class="pill">Rotate</span>
+              <button class="tool rlrot active" data-rot="auto">Auto</button>
+              <button class="tool rlrot" data-rot="left">↺ Left</button>
+              <button class="tool rlrot" data-rot="right">↻ Right</button>
+              <button class="tool rlrot" data-rot="180">⤢ 180°</button>
+            </div>
             <div id="rTrimBox" style="display:none">
               <input id="rScrub" type="range" min="0" max="100" step="0.1" value="0" style="width:100%"/>
               <div class="optrow">
@@ -706,13 +712,18 @@ $("blurAmt").oninput=()=>$("blurVal").textContent=$("blurAmt").value+'%';
 /* ---------- Make-a-Reel wizard ---------- */
 let reelRatio='9:16', reelFit='crop', reelCapStyle='clean', reelCapSize='m',
     reelCapPos='bottom', reelCapColor='white', reelTheme='dark',
-    reelStart=0, reelEnd=0, reelSegs=[];
+    reelStart=0, reelEnd=0, reelSegs=[], reelRotate='auto';
 function rchips(sel, key, fn){ document.querySelectorAll(sel).forEach(b=>b.onclick=()=>{
   document.querySelectorAll(sel).forEach(x=>x.classList.toggle('active',x===b));
   fn(b.dataset[key]); }); }
 rchips('#reelWrap .rlr','ratio', v=>{ reelRatio=v;
   const vw=$("vwrap"); vw.classList.toggle('r11',v==='1:1'); vw.classList.toggle('r45',v==='4:5'); });
 rchips('#reelWrap .rlf','fit',   v=>reelFit=v);
+rchips('#reelWrap .rlrot','rot', v=>{ reelRotate=v; rApplyRotPreview(); });
+function rApplyRotPreview(){ const v=$("rTrimV"); if(!v) return;
+  const deg={auto:0,left:-90,right:90,'180':180}[reelRotate]||0;
+  v.style.transformOrigin='center center';
+  v.style.transform=deg?`rotate(${deg}deg)`:''; }
 rchips('#reelWrap .rls','capstyle', v=>{ reelCapStyle=v;
   $("capOpts").style.display=(v==='off')?'none':'block';
   $("capMockTxt").style.display=(v==='off')?'none':'block'; capMockDraw(); });
@@ -1145,6 +1156,7 @@ async function run(kind){
     const _segs=reelSegs.slice();
     if(reelEnd>reelStart) _segs.push([+reelStart.toFixed(2),+reelEnd.toFixed(2)]);
     if(_segs.length) body.segments=_segs;
+    if(reelRotate&&reelRotate!=='auto') body.rotate=reelRotate;
     if(focusPt&&reelFit==='crop') body.focus=[focusPt.x,focusPt.y];
   } else if(task==='blur'){
     const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');

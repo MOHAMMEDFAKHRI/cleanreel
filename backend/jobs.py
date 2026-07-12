@@ -424,6 +424,15 @@ class JobManager:
                     trimmed = os.path.join(tmpd, "trim.mp4")
                     wr.trim_video(stage, trimmed, start=t0, end=end)
                     stage = trimmed
+                # 1b) optional rotation (auto = leave as-is; ffmpeg already
+                #     applies the source's orientation metadata on re-encode).
+                rot = params.get("rotate")
+                if rot in ("left", "right", "180"):
+                    job.progress = 0.10
+                    job.message = "Reel — rotating your clip..."
+                    rotated = os.path.join(tmpd, "rot.mp4")
+                    wr.rotate_video(stage, rotated, rot)
+                    stage = rotated
                 # 2) reframe (smart crop / blurred fill)
                 job.progress = 0.12
                 job.message = f"Reel 1/3 — reframing to {ratio}..."

@@ -600,6 +600,30 @@ def concat_many(paths, out):
         raise RuntimeError("Joining your selected parts failed.")
 
 
+def rotate_video(src, out, mode):
+    """Rotate the whole clip a fixed amount (applied before reframing in the reel
+    pipeline). mode: 'left' (90° CCW), 'right' (90° CW), '180'. Uses
+    -noautorotate so the transpose acts on the raw frames predictably, then
+    clears the rotation metadata so players don't re-rotate. Audio is re-encoded
+    to AAC for a clean hand-off to the next stage."""
+    m = str(mode).lower()
+    if m in ("right", "cw"):
+        vf = "transpose=1"
+    elif m in ("left", "ccw"):
+        vf = "transpose=2"
+    elif m in ("180", "flip"):
+        vf = "transpose=1,transpose=1"
+    else:
+        raise RuntimeError(f"Unknown rotate mode: {mode}")
+    r = subprocess.run([
+        ffmpeg_bin(), "-y", "-loglevel", "error", "-noautorotate", "-i", src,
+        "-vf", vf, "-c:v", "libx264", "-crf", "17", "-preset", "fast",
+        "-pix_fmt", "yuv420p", "-metadata:s:v:0", "rotate=0",
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out])
+    if r.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 4096:
+        raise RuntimeError("Rotating the video failed.")
+
+
 def _deepfilter_bin():
     """Path to the deep-filter CLI (DeepFilterNet's MIT/Apache-licensed Rust
     binary, fetched at Docker build time) or None if unavailable."""
