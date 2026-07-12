@@ -669,6 +669,7 @@ function setTask(t){
   $("captionsWrap").style.display=(t==='captions')?'block':'none';
   $("reelWrap").style.display=(t==='reel')?'block':'none';
   if(t==='reel'){ try{ rTrimSetup(); }catch(e){} }
+  updateUploadLimit();
   $("toolbar").style.display=ed?'':'none';
   $("tAuto").style.display=(t==='remove')?'':'none';
   $("tFaces").style.display=(t==='blur')?'':'none';
@@ -1083,12 +1084,19 @@ async function doUpload(){
   } finally { uploading=false; btn.disabled=false; btn.textContent=label; }
 }
 $("up").addEventListener("click",doUpload);
-let MAXSEC=60, MAXREEL=900, MAXREELOUT=60;   // caps; refreshed from /api/health
+let MAXSEC=60, MAXREEL=900, MAXREELOUT=60, MAXREELMB=600;   // caps; refreshed from /api/health
+function updateUploadLimit(){
+  const el=$("uploadLimit"); if(!el) return;
+  el.innerHTML=(task==='reel')
+    ? `Reel mode — upload up to <b>${MAXREEL}s</b> · max ${MAXREELMB} MB. Trim the part(s) you want; your reel can be up to <b>${MAXREELOUT}s</b>.`
+    : `Up to <b>${MAXSEC}s</b> · max 200 MB per video · previews are free, export cleans the whole clip.`;
+}
 fetch(API+"/api/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-  if(d&&d.max_export_seconds){ MAXSEC=d.max_export_seconds;
-    $("uploadLimit").innerHTML=`Up to <b>${MAXSEC}s</b> · max 200 MB per video · previews are free, export cleans the whole clip.`; }
+  if(d&&d.max_export_seconds) MAXSEC=d.max_export_seconds;
   if(d&&d.max_reel_upload_seconds) MAXREEL=d.max_reel_upload_seconds;
+  if(d&&d.max_reel_upload_mb) MAXREELMB=d.max_reel_upload_mb;
   if(d&&d.max_reel_output_seconds) MAXREELOUT=d.max_reel_output_seconds;
+  updateUploadLimit();
 }).catch(()=>{});
 $("file").addEventListener("change",()=>{
   if(uploading) return;
