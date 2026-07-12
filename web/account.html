@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Your account — CleanReel</title>
+<meta name="robots" content="noindex"/>
+<style>
+:root{--bg:#0b0e1a;--card:#151a33;--line:#252b4d;--ink:#eef1fb;--mut:#9aa2c0;
+--acc:#7c5cff;--acc2:#b45cff;--ok:#3ddc84;--warn:#ffb74d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px 48px}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0;gap:10px;flex-wrap:wrap}
+.logo{font-weight:800;font-size:20px;color:var(--ink);text-decoration:none}
+.logo span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.btn{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#fff;border:0;border-radius:12px;
+padding:11px 18px;font-weight:700;font-size:15px;cursor:pointer;display:inline-block;text-decoration:none}
+.btn.ghost{background:var(--card);border:1px solid var(--line)}
+h1{font-size:clamp(24px,5vw,34px);margin:14px 0 4px}
+.sub{color:var(--mut);margin:0 0 18px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin:10px 0}
+.job{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.job .ic{font-size:22px}
+.job .meta{flex:1;min-width:160px}
+.job .meta b{display:block;font-size:15px}
+.job .meta small{color:var(--mut)}
+.tag{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.tag.done{color:var(--ok);border-color:rgba(61,220,132,.35)}
+.tag.run{color:var(--warn);border-color:rgba(255,183,77,.35)}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts a{color:#b7a6ff;text-decoration:none;font-size:14px;border:1px solid var(--line);
+border-radius:10px;padding:7px 12px;background:rgba(124,92,255,.08)}
+.empty{color:var(--mut);text-align:center;padding:36px 10px}
+footer{color:#6b7396;font-size:13px;padding-top:26px}
+footer a{color:#8b93b8}
+@media (max-width:480px){ .acts a{flex:1;text-align:center} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/">✨ Clean<span>Reel</span></a>
+    <a class="btn ghost" href="/#tool">← Back to the studio</a>
+  </header>
+
+  <h1>Your recent work</h1>
+  <p class="sub" id="who">Checking your session…</p>
+  <div id="list"></div>
+
+  <footer>Results auto-delete <b id="ttl">~6</b> hours after they were created —
+    download anything you want to keep. <a href="/privacy.html">Privacy</a></footer>
+</div>
+
+<script>
+const API="https://cleanreel.onrender.com";
+const auth=JSON.parse(localStorage.getItem('cr_auth')||'null');
+const EMO={remove:'💧',erase:'🧹',enhance:'✨',reframe:'📱',blur:'🕶',captions:'💬',reel:'🎬'};
+const NAME={remove:'Remove watermark',erase:'Erase objects',enhance:'Enhance',
+  reframe:'Reframe',blur:'Privacy blur',captions:'Captions',reel:'Reel'};
+function ago(t){const s=Math.max(0,(Date.now()/1000)-t);
+  return s<90?'just now':s<3600?Math.round(s/60)+' min ago':(s/3600).toFixed(1)+' h ago';}
+function left(t){const s=t-(Date.now()/1000);
+  if(s<=0) return 'expired';
+  return s<3600?Math.ceil(s/60)+' min left':(s/3600).toFixed(1)+' h left';}
+async function load(){
+  const who=document.getElementById('who'), list=document.getElementById('list');
+  if(!auth||!auth.session){
+    who.textContent='You are not signed in.';
+    list.innerHTML='<div class="empty">Sign in from the <a href="/#tool" style="color:#b7a6ff">studio</a> first — then your previews and exports from the last few hours show up here.</div>';
+    return;
+  }
+  who.innerHTML='Signed in as <b>'+auth.email+'</b>';
+  try{
+    const r=await fetch(API+'/api/my/jobs',{headers:{'Authorization':'Bearer '+auth.session}});
+    if(r.status===401){ who.textContent='Your session expired — sign in again from the studio.'; return; }
+    const d=await r.json();
+    document.getElementById('ttl').textContent='~'+d.ttl_hours;
+    if(!d.jobs.length){
+      list.innerHTML='<div class="empty">Nothing here yet. Run a preview or export in the '+
+        '<a href="/#tool" style="color:#b7a6ff">studio</a> and it appears here for '+d.ttl_hours+' hours.</div>';
+      return;
+    }
+    list.innerHTML=d.jobs.map(j=>{
+      const done=j.status==='done', run=(j.status==='queued'||j.status==='processing');
+      const tag=done?'<span class="tag done">done · '+left(j.expires_at)+'</span>'
+        :run?'<span class="tag run">'+(j.message||j.status)+'</span>'
+        :'<span class="tag">'+j.status+'</span>';
+      const acts=[];
+      if(done&&j.result_url) acts.push('<a href="'+API+j.result_url+'" download>⬇ Download '+(j.mode==='preview'?'preview':'video')+'</a>');
+      if(j.srt_url) acts.push('<a href="'+API+j.srt_url+'" download>📝 .srt</a>');
+      return '<div class="card job"><span class="ic">'+(EMO[j.task]||'🎞')+'</span>'+
+        '<span class="meta"><b>'+(NAME[j.task]||j.task)+' · '+j.mode+'</b>'+
+        '<small>'+ago(j.created)+(j.confidence?' · quality '+Math.round(j.confidence*100)+'%':'')+'</small></span>'+
+        tag+'<span class="acts">'+acts.join('')+'</span></div>';
+    }).join('');
+  }catch(e){ list.innerHTML='<div class="empty">Could not reach the server — try again in a minute.</div>'; }
+}
+load(); setInterval(load, 30000);
+</script>
+</body>
+</html>

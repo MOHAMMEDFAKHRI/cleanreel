@@ -113,10 +113,12 @@ class Job:
     created: float = field(default_factory=time.time)
     key: str | None = None          # dedup key (file_id|task|mode) — double-submit guard
     srt: str | None = None          # captions task: the .srt text (served via /api/srt)
+    owner: str | None = None        # signed-in user's email (account page listing)
+    task: str = "remove"            # which mode ran (account page listing)
 
     def public(self):
         d = asdict(self)
-        for k in ("result_path", "before_path", "key", "srt"):
+        for k in ("result_path", "before_path", "key", "srt", "owner"):
             d.pop(k, None)
         d["has_srt"] = bool(self.srt)
         return d
@@ -134,11 +136,22 @@ class JobManager:
         self._jt.start()
 
     # ---- public API ----
-    def submit(self, mode: str, params: dict, key: str | None = None) -> str:
-        job = Job(id=uuid.uuid4().hex, mode=mode, key=key)
+    def submit(self, mode: str, params: dict, key: str | None = None,
+               owner: str | None = None) -> str:
+        job = Job(id=uuid.uuid4().hex, mode=mode, key=key, owner=owner,
+                  task=params.get("task", "remove"))
         self.jobs[job.id] = job
         self.q.put((job.id, params))
         return job.id
+
+    def for_owner(self, email: str, ttl_hours: float) -> list:
+        """The signed-in user's recent jobs, newest first, still inside the
+        storage TTL. In-memory: a service restart clears the list (results
+        themselves live on disk until the janitor's TTL sweep)."""
+        cutoff = time.time() - ttl_hours * 3600
+        mine = [j for j in self.jobs.values()
+                if j.owner == email and j.created >= cutoff]
+        return sorted(mine, key=lambda j: -j.created)
 
     def has_active(self, key: str) -> bool:
         """True if an identical job (same dedup key) is queued or processing —

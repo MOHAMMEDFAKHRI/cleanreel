@@ -538,7 +538,10 @@ def create_job(req: JobRequest, request: Request,
             params["trim_start"] = max(0.0, float(req.trim_start))
         if req.trim_end:
             params["trim_end"] = float(req.trim_end)
-    job_id = manager.submit(req.mode, params, key=dup_key)
+    # Attach the signed-in user (export always; preview too when signed in) so
+    # the account page can list their recent work.
+    owner = refund_email or current_user(authorization)
+    job_id = manager.submit(req.mode, params, key=dup_key, owner=owner)
     print(f"[job] mode={req.mode} task={task} id={job_id}", flush=True)
     return {"job_id": job_id, "mode": req.mode, "task": task}
 
@@ -558,6 +561,34 @@ def job_status(job_id: str):
         if getattr(job, "srt", None):
             data["srt_url"] = f"/api/srt/{job_id}"
     return data
+
+
+@app.get("/api/my/jobs")
+def my_jobs(authorization: str | None = Header(default=None)):
+    """The signed-in user's jobs from the last STORAGE_TTL_HOURS (account
+    page). In-memory listing: a server restart clears it, results on disk
+    still honour the TTL. Never exposes another user's work."""
+    email = current_user(authorization)
+    if not email:
+        raise HTTPException(401, "Sign in to see your recent work.")
+    from jobs import STORAGE_TTL_HOURS
+    items = []
+    for j in manager.for_owner(email, STORAGE_TTL_HOURS):
+        d = {"id": j.id, "task": j.task, "mode": j.mode, "status": j.status,
+             "created": j.created,
+             "expires_at": j.created + STORAGE_TTL_HOURS * 3600,
+             "message": j.message if j.status != "done" else None}
+        if j.status == "done":
+            if j.result_path and os.path.exists(j.result_path):
+                d["result_url"] = f"/api/result/{j.id}"
+            else:
+                d["status"] = "expired"
+            if getattr(j, "srt", None):
+                d["srt_url"] = f"/api/srt/{j.id}"
+            if j.qc:
+                d["confidence"] = j.qc.get("confidence")
+        items.append(d)
+    return {"jobs": items, "ttl_hours": STORAGE_TTL_HOURS}
 
 
 @app.get("/api/srt/{job_id}")
