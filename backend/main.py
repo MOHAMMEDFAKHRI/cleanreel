@@ -44,7 +44,7 @@ MAX_UPLOAD_SECONDS = MAX_EXPORT_SECONDS   # cleanup modes: upload == export, so 
 # Reel creation samples from long source footage, so the reel flow accepts a
 # bigger/longer upload — the *rendered* reel is still bounded by which part(s)
 # the user selects (enforced at job submit against MAX_REEL_OUTPUT_SECONDS).
-MAX_REEL_UPLOAD_MB      = int(os.environ.get("MAX_REEL_UPLOAD_MB", "600"))
+MAX_REEL_UPLOAD_MB      = int(os.environ.get("MAX_REEL_UPLOAD_MB", "2048"))   # 2 GB
 MAX_REEL_UPLOAD_SECONDS = int(os.environ.get("MAX_REEL_UPLOAD_SECONDS", "900"))   # 15 min
 # NOTE: the reel *output* cap (MAX_REEL_OUTPUT_SECONDS) is enforced at job submit.
 

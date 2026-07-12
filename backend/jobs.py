@@ -439,7 +439,9 @@ class JobManager:
                 ref_out = os.path.join(tmpd, "reframed.mp4")
                 wr.reframe_video(stage, ref_out, ratio=ratio, fit=fit,
                                  preview=seconds,
-                                 max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
+                                 # Reels render at full 1080p (1080x1920) — crisper than
+                                 # the 1366 cleanup default; reel-specific so reframe mode is unchanged.
+                                 max_dim=int(os.environ.get("WR_REEL_MAX_DIM", "1920")),
                                  focus=params.get("focus"),
                                  progress_cb=lambda d, t:
                                      setattr(job, "progress",
