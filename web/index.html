@@ -15,15 +15,17 @@
 <meta name="twitter:title" content="CleanReel — Clean up &amp; repurpose videos you own"/>
 <meta name="twitter:description" content="The rights-aware video cleanup studio. Free preview, sharp results, uploads auto-delete."/>
 <script>
-/* Analytics (PostHog, EU/US cloud free tier). Set PH_KEY to your project's
+/* Analytics (PostHog, US cloud free tier). Set PH_KEY to your project's
    public key to enable; while it's empty, tracking is FULLY disabled and
-   track() is a silent no-op. No cookies banner needed with this config
-   (memory persistence, no cross-site tracking). */
+   track() is a silent no-op. First-party localStorage persistence (no cookies,
+   no cross-site tracking) so returning visitors are recognised; person profiles
+   are created only for signed-in users (identified_only + identify() below). */
 const PH_KEY="phc_nkxXK3RjHVEvNKCqiKFuXsNecNyDpr2sU2YgTUFNPLL2", PH_HOST="https://us.i.posthog.com";
 if(PH_KEY){
   const s=document.createElement('script'); s.src=PH_HOST+'/static/array.js'; s.async=true;
   s.onload=()=>{ try{ posthog.init(PH_KEY,{api_host:PH_HOST,
-    persistence:'memory',person_profiles:'identified_only',autocapture:false}); }catch(e){} };
+    persistence:'localStorage',person_profiles:'identified_only',autocapture:false});
+    if(typeof auth!=='undefined'&&auth&&auth.email) posthog.identify(auth.email,{email:auth.email}); }catch(e){} };
   document.head.appendChild(s);
 }
 function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posthog.capture(ev,props||{}); }catch(e){} }
@@ -827,7 +829,9 @@ capMockDraw(); cardMockDraw();
 /* ---------- accounts (magic-link) ---------- */
 let auth = JSON.parse(localStorage.getItem('cr_auth')||'null');   // {session,email,credits}
 function authHeaders(){ return auth&&auth.session ? {'Authorization':'Bearer '+auth.session} : {}; }
-function saveAuth(a){ auth=a; a?localStorage.setItem('cr_auth',JSON.stringify(a)):localStorage.removeItem('cr_auth'); renderAcct(); }
+function saveAuth(a){ auth=a; a?localStorage.setItem('cr_auth',JSON.stringify(a)):localStorage.removeItem('cr_auth');
+  try{ if(PH_KEY&&window.posthog&&posthog.identify){ if(a&&a.email) posthog.identify(a.email,{email:a.email}); else posthog.reset(); } }catch(e){}
+  renderAcct(); }
 function renderAcct(){
   const inU = !!(auth&&auth.session);
   $("acctForm").style.display=inU?'none':'inline';
@@ -1262,6 +1266,7 @@ async function run(kind){
   $("prog").style.width="6%"; $("status").textContent=RUN_COPY[task]||"Submitting…";
   $("dl").style.display="none"; $("srtDl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none";
   resetCompare();
+  if(kind==='export') track('export_click',{task});
   try{
     const r=await fetch(API+"/api/jobs",{method:"POST",
       headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify(body)});
@@ -1276,13 +1281,14 @@ async function run(kind){
         return;
       }
       if(r.status===401){
+        track('export_blocked_signin',{task});
         $("status").textContent="";
         $("signinNudge").innerHTML='🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> No card needed: enter your email below and we\'ll send a one-tap sign-in link.';
         $("signinNudge").style.display='block';
         document.getElementById('acct').scrollIntoView({behavior:'smooth',block:'center'});
         const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}
       }
-      else if(r.status===402){ $("status").textContent="Out of export credits — grab a pack below."; $("buy").click(); }
+      else if(r.status===402){ track('export_blocked_credits',{task}); $("status").textContent="Out of export credits — grab a pack below."; $("buy").click(); }
       else if(r.status===429){ $("status").textContent=(d&&d.detail)||"We're at capacity right now — please try again in a few minutes."; }
       else $("status").textContent="Error: "+(d.detail||"failed");
       return;
