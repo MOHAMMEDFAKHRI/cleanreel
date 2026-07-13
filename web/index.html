@@ -544,6 +544,7 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
         <p class="hint" id="cmpHint" style="display:none">Drag the handle to sweep between the original and the result. Both loop muted &amp; in sync.</p>
         <a id="dl" class="dl">⬇ Download cleaned video</a>
         <a id="srtDl" class="dl" style="display:none" download="captions.srt">📝 Download subtitles (.srt) — free</a>
+        <div id="previewCta" class="nudge" style="display:none;margin-top:10px"></div>
         <p id="retry" class="hint" style="display:none">Not fully clean? Adjust your highlight on the left and hit <b>Free preview</b> again — previews are free and unlimited.</p>
       </div>
     </div>
@@ -1264,7 +1265,7 @@ async function run(kind){
       ?"Submitting — cropping around your focus point…"
       :"Submitting — smart-tracking the subject…"};
   $("prog").style.width="6%"; $("status").textContent=RUN_COPY[task]||"Submitting…";
-  $("dl").style.display="none"; $("srtDl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none";
+  $("dl").style.display="none"; $("srtDl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none"; $("previewCta").style.display="none";
   resetCompare();
   if(kind==='export') track('export_click',{task});
   try{
@@ -1283,10 +1284,7 @@ async function run(kind){
       if(r.status===401){
         track('export_blocked_signin',{task});
         $("status").textContent="";
-        $("signinNudge").innerHTML='🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> No card needed: enter your email below and we\'ll send a one-tap sign-in link.';
-        $("signinNudge").style.display='block';
-        document.getElementById('acct').scrollIntoView({behavior:'smooth',block:'center'});
-        const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}
+        nudgeSignin('🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> No card needed: enter your email below and we\'ll send a one-tap sign-in link.');
       }
       else if(r.status===402){ track('export_blocked_credits',{task}); $("status").textContent="Out of export credits — grab a pack below."; $("buy").click(); }
       else if(r.status===429){ $("status").textContent=(d&&d.detail)||"We're at capacity right now — please try again in a few minutes."; }
@@ -1307,6 +1305,33 @@ async function run(kind){
 }
 $("prev").onclick=()=>run("preview");
 $("exp").onclick=()=>run("export");
+function nudgeSignin(msg){
+  $("signinNudge").innerHTML=msg; $("signinNudge").style.display='block';
+  try{ document.getElementById('acct').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}
+}
+/* Proactive nudge the moment a PREVIEW finishes — the delight point where real
+   users were leaving without ever reaching the export/sign-in gate. */
+function showPreviewCta(t){
+  const el=$("previewCta"); if(!el) return;
+  const signedIn=!!(auth&&auth.session), credits=signedIn?(auth.credits||0):0;
+  track('preview_nudge_shown',{task:t,signed_in:signedIn,credits});
+  const b=document.createElement('button'); b.className='btn';
+  if(signedIn && credits>0){
+    el.innerHTML='✨ <b>Looks good?</b> That was a short preview — export the full-length video now. &nbsp;';
+    b.textContent='⬇ Export the full video';
+    b.onclick=()=>{ track('preview_nudge_click',{signed_in:true}); run('export'); };
+  } else if(signedIn){
+    el.innerHTML='✨ <b>Looks good?</b> You\'re out of export credits — grab a pack to export the full video. &nbsp;';
+    b.textContent='Get export credits';
+    b.onclick=()=>{ track('preview_nudge_click',{signed_in:true,credits:0}); try{$("buy").click();}catch(e){} };
+  } else {
+    el.innerHTML='✨ <b>Like it?</b> That\'s a free preview of the first few seconds. Sign in free to export the full clean video — <b>2 credits, no card.</b> &nbsp;';
+    b.textContent='Sign in → get the full video';
+    b.onclick=()=>{ track('preview_nudge_click',{signed_in:false}); nudgeSignin('🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> Enter your email below for a one-tap sign-in link.'); };
+  }
+  el.appendChild(b); el.style.display='block';
+}
 
 async function poll(id, t, fails=0){
   try{
@@ -1330,6 +1355,7 @@ async function poll(id, t, fails=0){
           `For a spotless result, adjust your highlight on the canvas above and re-run.`; }
       } else { $("status").textContent=beforeURL
         ?"Done ✓ — flip to Compare to see before / after.":"Done ✓ — your result is ready."; }
+      if(lastMode==='preview') showPreviewCta(t); else $("previewCta").style.display='none';
       return;}
     if(j.status==="error"){ jobBusy(false);
       track('job_error',{task:t,mode:lastMode});
