@@ -1172,6 +1172,12 @@ async function doUpload(){
     fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
     lastUp=f.name+"|"+f.size+"|"+f.lastModified;    // double-upload guard key
     track('upload_ok',{seconds:d.seconds,w:vw,h:vh});
+    // Predictive GPU pre-warm: a video is in, so a preview is likely imminent —
+    // boot the Modal GPU now (fire-and-forget) so its ~20s cold start overlaps the
+    // user brushing their mask / picking settings, and Preview lands on a warm GPU.
+    if(task==='remove'||task==='erase'||task==='enhance'){
+      try{ fetch(API+"/api/prewarm?task="+encodeURIComponent(task),{method:"POST",keepalive:true}).catch(()=>{}); }catch(e){}
+    }
     if(task==='reel'){ try{ rTrimSetup(); }catch(e){} }
     if(rawBeforeURL) URL.revokeObjectURL(rawBeforeURL);
     rawBeforeURL=URL.createObjectURL(f); // last-resort Compare fallback (see compareReady)

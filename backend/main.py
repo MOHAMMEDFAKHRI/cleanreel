@@ -137,6 +137,62 @@ def health():
             "max_reel_upload_mb": MAX_REEL_UPLOAD_MB,
             "max_reel_output_seconds": MAX_REEL_OUTPUT_SECONDS}
 
+# ---- predictive GPU pre-warm -------------------------------------------------
+# The LaMa / Enhance Modal apps scale to zero, so the FIRST preview after an idle
+# spell pays ~15-20s of container cold-start (see gpu/modal_app.py). Rather than
+# pay for an always-on warm GPU, the client calls /api/prewarm the instant a video
+# is uploaded — a strong "a preview is coming" signal — so the container boots
+# while the user is still brushing their mask / choosing settings, and the real
+# Preview lands on an already-warm GPU. Fire-and-forget + a short per-app throttle
+# keep the cost tied to genuine intent (a bounced upload just lets it scale back
+# down after Modal's scaledown_window). No Modal-side change: we simply hit the
+# existing inpaint/enhance endpoints with a throwaway 8x8 frame, which forces the
+# container up and runs one trivial inference so the first real call is warm too.
+_PREWARM_GAP = float(os.environ.get("WR_PREWARM_MIN_GAP", "25"))   # skip re-warm within N s (per app)
+_PREWARM_TIMEOUT = float(os.environ.get("WR_PREWARM_TIMEOUT", "30"))
+_prewarm_last = {}
+_prewarm_lock = threading.Lock()
+_WARM_IMG  = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGOsr69nwAaYsIoOWgkALcUBjTy/9hgAAAAASUVORK5CYII="
+_WARM_MASK = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAAAAADhZOFXAAAAGUlEQVR4nGNgwAv+/2dgYGDCr4aBgYGBAQBRPwIB0iyIkgAAAABJRU5ErkJggg=="
+
+def _prewarm_fire(url, payload):
+    try:
+        import requests
+        requests.post(url, json=payload, timeout=_PREWARM_TIMEOUT)
+    except Exception:
+        pass   # best-effort: a failed warm just means the preview pays the cold start, as before
+
+def _prewarm(kind, url_env, payload):
+    url = os.environ.get(url_env, "").strip()
+    if not url:
+        return False                       # that GPU app isn't configured on this server
+    now = time.time()
+    with _prewarm_lock:
+        if now - _prewarm_last.get(kind, 0.0) < _PREWARM_GAP:
+            return False                   # already warm / warming — don't pile on GPU time
+        _prewarm_last[kind] = now
+    threading.Thread(target=_prewarm_fire, args=(url, payload), daemon=True).start()
+    return True
+
+@app.post("/api/prewarm")
+def prewarm(task: str = ""):
+    """Best-effort GPU pre-warm ahead of a preview; called by the client on upload.
+    Returns immediately — the Modal boot runs on a background thread. Only the task
+    string is accepted (never a URL/token), so a client can't point warming anywhere
+    but the server's own pre-configured Modal apps."""
+    task = (task or "").strip().lower()
+    tok = os.environ.get("WR_INPAINT_TOKEN", "")
+    warmed = []
+    if task in ("remove", "erase", ""):
+        if _prewarm("lama", "WR_INPAINT_URL",
+                    {"token": tok, "items": [{"image": _WARM_IMG, "mask": _WARM_MASK}]}):
+            warmed.append("lama")
+    if task == "enhance":
+        if _prewarm("enhance", "WR_ENHANCE_URL",
+                    {"token": tok, "items": [{"image": _WARM_IMG}], "scale": 2.0, "face_enhance": False}):
+            warmed.append("enhance")
+    return {"ok": True, "warming": warmed}
+
 class EmailReq(BaseModel):
     email: str
 
