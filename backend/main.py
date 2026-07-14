@@ -132,6 +132,7 @@ def health():
     # default — a GET-only route answers 405 and they wrongly flag the API "down".
     return {"ok": True, "preview_seconds": PREVIEW_SECONDS,
             "max_export_seconds": MAX_EXPORT_SECONDS,
+            "max_upload_mb": MAX_UPLOAD_MB,   # cleanup-mode (remove/erase/etc.) cap; lets the client size-check before uploading
             "max_reel_upload_seconds": MAX_REEL_UPLOAD_SECONDS,
             "max_reel_upload_mb": MAX_REEL_UPLOAD_MB,
             "max_reel_output_seconds": MAX_REEL_OUTPUT_SECONDS}

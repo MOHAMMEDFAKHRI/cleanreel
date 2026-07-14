@@ -522,6 +522,7 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
         <span id="cred" class="pill"></span>
         <div class="bar"><i id="prog"></i></div>
         <p id="status" class="pill"></p>
+        <p class="hint" id="waitNote" style="display:none"></p>
         <p class="hint" id="mailNote" style="display:none"></p>
       </div>
       <div>
@@ -1184,15 +1185,16 @@ async function doUpload(){
     if(prog) prog.style.display='none'; }
 }
 $("up").addEventListener("click",doUpload);
-let MAXSEC=60, MAXREEL=900, MAXREELOUT=60, MAXREELMB=2048;   // caps; refreshed from /api/health
+let MAXSEC=60, MAXREEL=900, MAXREELOUT=60, MAXREELMB=2048, MAXMB=200;   // caps; refreshed from /api/health
 function updateUploadLimit(){
   const el=$("uploadLimit"); if(!el) return;
   el.innerHTML=(task==='reel')
     ? `Reel mode — upload up to <b>${MAXREEL}s</b> · max ${MAXREELMB} MB. Trim the part(s) you want; your reel can be up to <b>${MAXREELOUT}s</b>.`
-    : `Up to <b>${MAXSEC}s</b> · max 200 MB per video · previews are free, export cleans the whole clip.`;
+    : `Up to <b>${MAXSEC}s</b> · max ${MAXMB} MB per video · previews are free, export cleans the whole clip.`;
 }
 fetch(API+"/api/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
   if(d&&d.max_export_seconds) MAXSEC=d.max_export_seconds;
+  if(d&&d.max_upload_mb) MAXMB=d.max_upload_mb;
   if(d&&d.max_reel_upload_seconds) MAXREEL=d.max_reel_upload_seconds;
   if(d&&d.max_reel_upload_mb) MAXREELMB=d.max_reel_upload_mb;
   if(d&&d.max_reel_output_seconds) MAXREELOUT=d.max_reel_output_seconds;
@@ -1202,6 +1204,15 @@ $("file").addEventListener("change",()=>{
   if(uploading) return;
   const f=$("file").files[0]; $("tooLong").style.display='none'; $("up").disabled=false;
   if(!f) return;
+  // Size guard BEFORE uploading: catch oversize files instantly (clear message)
+  // instead of letting them upload and bounce off a server 413. Cleanup modes cap
+  // at MAXMB (~200 MB); reels at MAXREELMB (~2 GB). Both refreshed from /api/health.
+  const mbCap=(task==='reel')?MAXREELMB:MAXMB;
+  if(f.size > mbCap*1048576){
+    track('upload_too_large',{mb:Math.round(f.size/1048576),cap:mbCap,task});
+    $("tooLong").innerHTML=`⚠ That file is <b>${(f.size/1048576).toFixed(0)} MB</b> — the limit is <b>${mbCap} MB</b> for this tool. Compress or trim it, then re-select.`;
+    $("tooLong").style.display='block'; $("up").disabled=true; $("meta").textContent=''; return;
+  }
   $("meta").textContent="Checking your file…";
   const cap=(task==='reel')?MAXREEL:MAXSEC;
   try{ const v=document.createElement('video'); v.preload='metadata';
@@ -1220,7 +1231,26 @@ ping(20000);                             // pre-warm a sleeping server on page l
 
 let jobRunning=false, lastMode='preview';
 function jobBusy(b){ jobRunning=b; $("prev").disabled=b; $("exp").disabled=b;
-  if(!b) $("mailNote").style.display="none"; }
+  if(!b){ $("mailNote").style.display="none"; stopWait(); } }
+/* Preview-wait reassurance: the first render after an idle spell has to warm up the
+   GPU (cold start), so a preview can take ~a minute. Without expectation-setting,
+   real users bounced mid-render (they left ~37s before their result was ready).
+   Show a live elapsed counter + "warming up" copy so they hang on. */
+let waitTimer=null, waitStart=0;
+function startWait(kind){
+  const el=$("waitNote"); if(!el) return;
+  if(kind!=='preview'){ stopWait(); return; }   // exports already reassure via #mailNote
+  waitStart=Date.now(); el.style.display='block';
+  const tick=()=>{
+    const s=Math.round((Date.now()-waitStart)/1000);
+    el.innerHTML = s<8
+      ? '⏳ Rendering your free preview…'
+      : `⏳ The first render warms up the GPU — this can take up to ~90s, then it's quick. Hang tight… <b>${s}s</b>`;
+  };
+  tick(); clearInterval(waitTimer); waitTimer=setInterval(tick,1000);
+}
+function stopWait(){ clearInterval(waitTimer); waitTimer=null;
+  const el=$("waitNote"); if(el){ el.style.display='none'; el.innerHTML=''; } }
 async function run(kind){
   if(!fileId){alert("Upload a video first.");return;}
   if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
@@ -1300,6 +1330,7 @@ async function run(kind){
     track(kind==='export'?'export_submitted':'preview_submitted',
           {task,clean_audio:$("cleanAudio").checked});
     lastMode=kind;
+    startWait(kind);
     poll(d.job_id, task);
   }catch(e){ jobBusy(false); $("status").textContent="Network error."; }
 }
