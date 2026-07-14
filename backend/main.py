@@ -152,15 +152,18 @@ _PREWARM_GAP = float(os.environ.get("WR_PREWARM_MIN_GAP", "25"))   # skip re-war
 _PREWARM_TIMEOUT = float(os.environ.get("WR_PREWARM_TIMEOUT", "30"))
 _prewarm_last = {}
 _prewarm_lock = threading.Lock()
-_WARM_IMG  = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGOsr69nwAaYsIoOWgkALcUBjTy/9hgAAAAASUVORK5CYII="
-_WARM_MASK = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAAAAADhZOFXAAAAGUlEQVR4nGNgwAv+/2dgYGDCr4aBgYGBAQBRPwIB0iyIkgAAAABJRU5ErkJggg=="
+_WARM_IMG  = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB+0lEQVR42u3TQQ0AAAjEMMD4WeeNBloJS9ZJCr4aCTAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAATAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAbAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHgWutKA31OlVM6AAAAAElFTkSuQmCC"
+_WARM_MASK = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB5Gfe6AAAAg0lEQVR42u3SgQ0AQAQEQb7/nunCS8w0cLIRAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGyT04O17KB3/QMEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+KEB2cABQAyZerMAAAAASUVORK5CYII="
 
-def _prewarm_fire(url, payload):
+def _prewarm_fire(kind, url, payload):
+    t0 = time.time()
     try:
         import requests
-        requests.post(url, json=payload, timeout=_PREWARM_TIMEOUT)
-    except Exception:
-        pass   # best-effort: a failed warm just means the preview pays the cold start, as before
+        r = requests.post(url, json=payload, timeout=_PREWARM_TIMEOUT)
+        print(f"[prewarm] {kind} warm done in {time.time()-t0:.1f}s (http {r.status_code})", flush=True)
+    except Exception as e:
+        # best-effort: a failed warm just means the preview pays the cold start, as before
+        print(f"[prewarm] {kind} warm failed after {time.time()-t0:.1f}s ({e!r})", flush=True)
 
 def _prewarm(kind, url_env, payload):
     url = os.environ.get(url_env, "").strip()
@@ -171,7 +174,7 @@ def _prewarm(kind, url_env, payload):
         if now - _prewarm_last.get(kind, 0.0) < _PREWARM_GAP:
             return False                   # already warm / warming — don't pile on GPU time
         _prewarm_last[kind] = now
-    threading.Thread(target=_prewarm_fire, args=(url, payload), daemon=True).start()
+    threading.Thread(target=_prewarm_fire, args=(kind, url, payload), daemon=True).start()
     return True
 
 @app.post("/api/prewarm")
@@ -191,6 +194,8 @@ def prewarm(task: str = ""):
         if _prewarm("enhance", "WR_ENHANCE_URL",
                     {"token": tok, "items": [{"image": _WARM_IMG}], "scale": 2.0, "face_enhance": False}):
             warmed.append("enhance")
+    if warmed:
+        print(f"[prewarm] task={task or '(default)'} -> booting {'+'.join(warmed)}", flush=True)
     return {"ok": True, "warming": warmed}
 
 class EmailReq(BaseModel):

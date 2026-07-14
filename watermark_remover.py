@@ -979,7 +979,14 @@ def info_from_user_mask(path, mask01, meanf=None, std_gray=None):
     mask = (mask01 > 0).astype(np.uint8)
     if mask.sum() == 0:
         return dict(type="manual", mask=mask, B=None, meanf=meanf, gain=0.0)
-    if float(std_gray[mask > 0].mean()) < 3.0:               # opaque -> inpaint only
+    # Opacity on the mask CORE (eroded to drop the sloppy brush margin that often
+    # spills onto a MOVING background), via a robust median. The old mean over the
+    # whole mask misread an opaque logo as see-through whenever the brush caught
+    # motion at its edge -> reverse-blend + subject-gate then left the logo behind
+    # (same failure class as CLE-25, here on the watermark-remove path).
+    core = cv2.erode(mask, np.ones((5, 5), np.uint8))
+    core_std = std_gray[core > 0] if int(core.sum()) >= 16 else std_gray[mask > 0]
+    if float(np.median(core_std)) < 3.0:                     # opaque -> inpaint only
         return dict(type="manual", mask=mask, B=None, meanf=meanf, gain=0.0)
     B = (meanf - cv2.GaussianBlur(meanf, (0, 0), 9)) * mask[..., None]
     gain = _calibrate_gain(path, B, meanf, n)
@@ -1852,10 +1859,14 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
             # the tracker has no trustworthy location: leave the frame untouched.
             eff, _rect = _track_mask(track, f, on_lost="skip")
         else:
-            # STATIC mark: gate to locally-flat pixels so the moving subject
-            # (face/hands/clothes detail) is left untouched.
+            # STATIC mark: when reverse-blend (B) is removing a SEMI-TRANSPARENT
+            # watermark globally, gate the residual inpaint to locally-flat pixels
+            # so a moving subject (face/hands/clothes detail) under the mark stays
+            # untouched. But for an OPAQUE / inpaint-only removal (B is None) nothing
+            # else removes the mark — gating to flat pixels would leave the
+            # (high-detail) logo/text behind, so inpaint the FULL marked region.
             eff = mask_bin
-            if protect_subject and eff is not None:
+            if protect_subject and eff is not None and B is not None:
                 gg = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
                 eff = mask_bin & (_flatness(gg, KW) < TAU).astype(np.uint8)
             if eff is not None:
@@ -1887,7 +1898,7 @@ def _clean_frame_static(f, B, meanf, gain, mask_bin, inp, protect=True):
         O = f.astype(np.float32); r = np.clip((C - O) / (C - meanf + 1e-3), 0, 3.0)
         f = np.clip(O - gain * B * r, 0, 255).astype(np.uint8)
     eff = mask_bin
-    if eff is not None and protect:
+    if eff is not None and protect and B is not None:   # gate only when reverse-blending; opaque -> full inpaint
         gg = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
         eff = mask_bin & (_flatness(gg, KW) < TAU).astype(np.uint8)
     if eff is not None:
