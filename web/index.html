@@ -286,6 +286,12 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
     <!-- Not a plain scroll anchor (the studio is right below): this also opens
          the file picker, so the first click already starts the workflow. -->
     <a class="btn" href="#tool" onclick="try{document.getElementById('file').click()}catch(e){}">Upload a video →</a>
+    <div class="trustline">
+      <span><b>Free</b> preview on every mode</span>
+      <span>No signup to try</span>
+      <span>Uploads auto-delete in ~6h</span>
+      <span>Faces stay sharp · audio kept</span>
+    </div>
   </section>
 
   <section id="tool" class="card">
