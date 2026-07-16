@@ -151,7 +151,7 @@ export default function App() {
       {screen === 'working' && <Working pct={workPct} />}
       {screen === 'preview' && preview && (
         <PreviewScreen
-          preview={preview} selectedLabels={selectedLabels}
+          preview={preview} video={video} selectedLabels={selectedLabels}
           onBack={() => setScreen('mark')}
           onSave={() => showToast('Sign-in & save lands in the next build — preview is yours to watch')}
         />

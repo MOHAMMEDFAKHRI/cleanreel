@@ -69,11 +69,8 @@ export default function Mark({ video, regions, selected, setSelected, onBack, on
       <h1 className="cr-h1" style={{ fontSize: 22 }}>{title}</h1>
       <p className="cr-sub">{sub}</p>
 
-      <div
-        ref={frameRef} className="cr-markframe"
-        style={{ aspectRatio: `${W} / ${H}` }}
-        onClick={onFrameClick}
-      >
+      <div className="cr-markframe">
+        <div ref={frameRef} className="cr-markinner" onClick={onFrameClick}>
         <img src={frameUrl(video.fileId)} alt="" draggable={false} />
         {regions.map(r => {
           const on = selected.has(r.id)
@@ -94,6 +91,7 @@ export default function Mark({ video, regions, selected, setSelected, onBack, on
         })}
         {ripple && <span key={ripple.key} className="cr-ripple" style={{ left: `${ripple.x}%`, top: `${ripple.y}%` }} />}
         {!coachSeen && regions.length > 0 && <span className="cr-coach">tap anything you want gone</span>}
+        </div>
       </div>
 
       <div className="cr-chips">

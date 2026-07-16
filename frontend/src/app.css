@@ -262,3 +262,20 @@
   background: var(--card); border: 1px solid var(--line); border-radius: 999px;
   padding: 6px 11px; font-size: 11.5px; font-weight: 700; color: var(--ok);
 }
+
+/* pillarbox-proof frame: the inner wrapper is sized BY the image, so overlay
+   percentages are exactly content percentages (mark screen fix). */
+.cr-markframe { display: flex; justify-content: center; cursor: default; }
+.cr-markinner { position: relative; cursor: pointer; }
+.cr-markinner img {
+  display: block; max-width: 100%; max-height: 56dvh; width: auto; height: auto;
+  border-radius: 16px;
+}
+.cr-compare video.before {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  filter: brightness(0.92);
+}
+.cr-compare .divider {
+  position: absolute; top: 0; bottom: 0; width: 2px; background: #fff;
+  transform: translateX(-50%); pointer-events: none;
+}

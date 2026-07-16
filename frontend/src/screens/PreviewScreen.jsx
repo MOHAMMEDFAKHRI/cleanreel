@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react'
 import { Check, ChevronLeft } from 'lucide-react'
 
 /** Preview screen (README §5): draggable before/after slider over the real clips. */
-export default function PreviewScreen({ preview, selectedLabels, onBack, onSave }) {
+export default function PreviewScreen({ preview, video, selectedLabels, onBack, onSave }) {
   const [pct, setPct] = useState(55)
   const frameRef = useRef(null)
   const dragging = useRef(false)
@@ -14,9 +14,10 @@ export default function PreviewScreen({ preview, selectedLabels, onBack, onSave 
     setPct(Math.min(94, Math.max(6, ((clientX - r.left) / r.width) * 100)))
   }, [])
 
+  // only brag about a confidence worth bragging about
   const confPct = preview.confidence != null ? Math.round(preview.confidence * 100) : null
   const many = selectedLabels.length > 1
-  const badge = (many ? 'Both removed' : 'Removed') + (confPct != null ? ` · looks ${confPct}% clean` : '')
+  const badge = (many ? 'Both removed' : 'Removed') + (confPct >= 50 ? ` · looks ${confPct}% clean` : '')
 
   return (
     <>
@@ -30,16 +31,19 @@ export default function PreviewScreen({ preview, selectedLabels, onBack, onSave 
 
       <div
         ref={frameRef} className="cr-compare"
+        style={video ? { aspectRatio: `${video.width} / ${video.height}` } : undefined}
         onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); move(e.clientX) }}
         onPointerMove={(e) => dragging.current && move(e.clientX)}
         onPointerUp={() => { dragging.current = false }}
       >
         <video className="after" src={preview.resultUrl} autoPlay muted loop playsInline />
         {preview.beforeUrl && (
-          <div className="beforeWrap" style={{ width: `${pct}%` }}>
-            <video src={preview.beforeUrl} autoPlay muted loop playsInline />
-          </div>
+          <video
+            className="before" src={preview.beforeUrl} autoPlay muted loop playsInline
+            style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
+          />
         )}
+        {preview.beforeUrl && <span className="divider" style={{ left: `${pct}%` }} />}
         <span className="tag tl">BEFORE</span>
         <span className="tag tr">AFTER</span>
         {preview.beforeUrl && (
@@ -48,7 +52,9 @@ export default function PreviewScreen({ preview, selectedLabels, onBack, onSave 
       </div>
 
       <div className="cr-resultchips">
-        {selectedLabels.map(l => <span key={l}><Check size={12} strokeWidth={3} /> {l} gone</span>)}
+        {[...new Set(selectedLabels.map(l => l.replace(/ \d+$/, '')))].map(l => (
+          <span key={l}><Check size={12} strokeWidth={3} /> {l} gone</span>
+        ))}
         <span><Check size={12} strokeWidth={3} /> Audio kept</span>
       </div>
 
