@@ -18,7 +18,7 @@ export default function MarkStub({ video, job, onBack }) {
         {video ? `${video.width}×${video.height} · ${video.seconds}s` : ''}{job ? ` · job: ${job}` : ''}
       </p>
       <div className="cr-stub-frame">
-        {video?.url && <video src={video.url} muted playsInline preload="metadata" />}
+        {video?.url && <video src={video.url + '#t=0.01'} muted playsInline preload="auto" />}
       </div>
       <div className="cr-note">
         Tap-to-select lands in the next build (phase b). Your clip is uploaded and
