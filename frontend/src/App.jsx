@@ -38,6 +38,7 @@ export default function App() {
   const [up, setUp] = useState(null)
   const [job, setJob] = useState(null)
   const [video, setVideo] = useState(null)
+  const jobRef = useRef(null)
   const [regions, setRegions] = useState([])
   const [selected, setSelected] = useState(new Set())
   const [workPct, setWorkPct] = useState(0)
@@ -80,7 +81,7 @@ export default function App() {
       const map = { remove: 'remove', erase: 'erase', enhance: 'enhance', reframe: 'reframe', blur: 'blur', captions: 'caption', reel: 'reel' }
       const t = map[h.slice(6)]
       history.replaceState(null, '', window.location.pathname)
-      if (t) { setJob(t); showToast('Add your video — we’ll take it from there') }
+      if (t) { setJob(t); jobRef.current = t; showToast('Add your video — we’ll take it from there') }
     }
     return () => clearInterval(pollRef.current)
   }, [])
@@ -93,10 +94,12 @@ export default function App() {
 
   const setAuthBoth = useCallback((a) => { setAuth(a); saveAuth(a); if (a?.email) identify(a.email) }, [])
 
-  const startUpload = useCallback(async (file, jobHint) => {
+  const setHint = useCallback((h) => { jobRef.current = h; setJob(h) }, [])
+
+  const startUpload = useCallback(async (file) => {
     if (!file) return
     if (!file.type.startsWith('video/')) { showToast('That doesn’t look like a video'); return }
-    setJob(jobHint || null)
+    const jobHint = jobRef.current
     setUp({ name: file.name, pct: 0 })
     let res = null
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
@@ -304,6 +307,7 @@ export default function App() {
 
   const reset = useCallback(() => {
     clearInterval(pollRef.current)
+    jobRef.current = null
     setVideo(null); setJob(null); setUp(null)
     setRegions([]); setSelected(new Set()); setPreview(null); setDone(null); setSheet(null)
     setScreen('home')
@@ -323,7 +327,7 @@ export default function App() {
             </button>
             <div className="cr-avatar" aria-hidden>{(auth?.email || 'M')[0].toUpperCase()}</div>
           </header>
-          <Home uploading={up} onFile={startUpload} />
+          <Home uploading={up} onFile={startUpload} hint={job} onHint={setHint} />
         </>
       )}
       {screen === 'analyzing' && <Analyzing />}

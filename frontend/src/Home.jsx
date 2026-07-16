@@ -10,14 +10,13 @@ const JOBS = [
   { id: 'caption', Icon: MessageSquare, title: 'Add captions', desc: 'Auto subtitles' },
 ]
 
-export default function Home({ uploading, onFile, hint, onHint }) {
+export default function Home({ uploading, onFile, hint }) {
   const inputRef = useRef(null)
+  const jobRef = useRef(null)
   const [drag, setDrag] = useState(false)
 
-  // hint lives in App state (single source of truth) — set it BEFORE the
-  // picker opens so no dispatch order can drop it
   const pick = (jobHint) => {
-    onHint(jobHint || null)
+    jobRef.current = jobHint || null
     inputRef.current?.click()
   }
 
@@ -28,15 +27,15 @@ export default function Home({ uploading, onFile, hint, onHint }) {
 
       <input
         ref={inputRef} type="file" accept="video/*" hidden
-        onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = '' }}
+        onChange={(e) => { onFile(e.target.files?.[0], jobRef.current); e.target.value = '' }}
       />
 
       <button
         className={'cr-drop' + (drag ? ' dragover' : '')}
-        onClick={() => !uploading && pick(hint)}
+        onClick={() => !uploading && pick(hint || null)}
         onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
         onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); if (!uploading) onFile(e.dataTransfer.files?.[0]) }}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); if (!uploading) onFile(e.dataTransfer.files?.[0], hint || null) }}
         disabled={!!uploading}
       >
         {uploading ? (
