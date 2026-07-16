@@ -504,3 +504,30 @@
 .cr-demo .ba .tag.tl { left: 6px; } .cr-demo .ba .tag.tr { right: 6px; }
 .cr-demo p { font-size: 10.5px; color: var(--mut); line-height: 1.4; }
 .cr-demo p button { color: var(--acc); font-weight: 700; font-size: 10.5px; padding: 0; }
+
+/* ---------- "See it work" as a pull-over page ---------- */
+.cr-demopull {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin-top: 22px; padding: 14px 16px; border-radius: 14px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-card);
+  text-align: left; transition: border-color 0.15s ease;
+}
+.cr-demopull:hover { border-color: var(--dash2); }
+.cr-demopull span { display: flex; flex-direction: column; gap: 2px; }
+.cr-demopull b { font-size: 13.5px; font-weight: 800; }
+.cr-demopull i { font-style: normal; font-size: 11px; color: var(--mut); }
+.cr-demopull em { font-style: normal; font-size: 18px; color: var(--acc); font-weight: 700; }
+
+@keyframes crPageIn { from { transform: translateX(60px); opacity: 0; } to { transform: none; opacity: 1; } }
+.cr-demopage {
+  position: fixed; inset: 0; z-index: 30; background: var(--bg);
+  overflow-y: auto; animation: crPageIn 0.28s ease;
+}
+.cr-demopage .inner {
+  max-width: 430px; margin: 0 auto;
+  padding: 18px 22px calc(28px + env(safe-area-inset-bottom));
+}
+.cr-demogrid.page { grid-template-columns: 1fr; gap: 12px; }
+.cr-demogrid.page .ba { aspect-ratio: 16 / 9; border-radius: 11px; }
+.cr-demogrid.page .cr-demo > b { font-size: 14px; }
+.cr-demogrid.page .cr-demo p { font-size: 12px; }

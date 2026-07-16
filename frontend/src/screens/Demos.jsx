@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import { ChevronLeft } from 'lucide-react'
 
 const DEMOS = [
   { job: 'remove',  title: 'Take a mark off', line: 'Auto-detected, neurally rebuilt', img: 'remove',
@@ -45,17 +46,27 @@ function DemoCard({ d, onTry }) {
   )
 }
 
-/** "See it work" — real frames, drag to compare (ported from the classic homepage). */
-export default function Demos({ onTry }) {
+/**
+ * "See it work" — its own pull-over page (slides over home). Deep-linkable via
+ * #demos; browser back closes it.
+ */
+export default function Demos({ onTry, onClose }) {
   return (
-    <>
-      <div className="cr-label" style={{ marginTop: 26 }}>See it work</div>
-      <p className="cr-sub" style={{ marginTop: 0, marginBottom: 10, fontSize: 12.5 }}>
-        Real frames, real results — drag any slider to compare.
-      </p>
-      <div className="cr-demogrid">
-        {DEMOS.map(d => <DemoCard key={d.job} d={d} onTry={() => onTry(d.job)} />)}
+    <div className="cr-demopage">
+      <div className="inner">
+        <div className="cr-backrow">
+          <button className="cr-back" onClick={onClose} aria-label="Back"><ChevronLeft size={18} /></button>
+          <div style={{ flex: 1 }} />
+        </div>
+        <h1 className="cr-h1" style={{ fontSize: 24 }}>See it work</h1>
+        <p className="cr-sub">Real frames, real results — drag any slider to compare before and after.</p>
+        <div className="cr-demogrid page">
+          {DEMOS.map(d => <DemoCard key={d.job} d={d} onTry={() => onTry(d.job)} />)}
+        </div>
+        <button className="cr-cta" onClick={onClose} style={{ marginTop: 20 }}>
+          Your clip next — fix it free
+        </button>
       </div>
-    </>
+    </div>
   )
 }

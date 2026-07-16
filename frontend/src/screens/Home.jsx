@@ -14,6 +14,16 @@ const JOBS = [
 export default function Home({ uploading, onFile, hint, onHint }) {
   const inputRef = useRef(null)
   const [drag, setDrag] = useState(false)
+  const [demosOpen, setDemosOpen] = useState(() => window.location.hash === '#demos')
+
+  // pull-over page semantics: #demos in the URL, browser back closes it
+  React.useEffect(() => {
+    const onPop = () => setDemosOpen(window.location.hash === '#demos')
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  const openDemos = () => { history.pushState(null, '', '#demos'); setDemosOpen(true) }
+  const closeDemos = () => { if (window.location.hash === '#demos') history.replaceState(null, '', window.location.pathname); setDemosOpen(false) }
 
   // hint lives in App state (single source of truth) — set it BEFORE the
   // picker opens so no dispatch order can drop it
@@ -70,7 +80,17 @@ export default function Home({ uploading, onFile, hint, onHint }) {
         ))}
       </div>
 
-      <Demos onTry={(job) => !uploading && pick(job)} />
+      <button className="cr-demopull" onClick={() => openDemos()}>
+        <span><b>See it work</b><i>Real before / after results from every job</i></span>
+        <em>→</em>
+      </button>
+
+      {demosOpen && (
+        <Demos
+          onClose={() => history.back()}
+          onTry={(job) => { closeDemos(); if (!uploading) pick(job) }}
+        />
+      )}
 
       <footer className="cr-foot">
         For videos you own or are licensed to edit · free preview on everything
