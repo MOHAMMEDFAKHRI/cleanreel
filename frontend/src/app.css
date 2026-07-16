@@ -560,3 +560,11 @@
   font-size: 22px; font-weight: 800; box-shadow: 0 6px 16px rgba(214, 69, 69, 0.35);
 }
 .cr-drop .t2.err { color: #d64545; font-weight: 600; max-width: 300px; line-height: 1.45; }
+
+/* one-tap tier-switch retries inside the rejection state */
+.cr-retry {
+  display: inline-block; padding: 9px 14px; border-radius: 999px;
+  background: var(--tint); border: 1px solid var(--chipbrd); color: var(--chipink);
+  font-size: 12px; font-weight: 700; cursor: pointer; animation: crPop 0.25s ease;
+}
+.cr-retry:hover { background: var(--tinth); }

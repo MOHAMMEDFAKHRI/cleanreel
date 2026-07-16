@@ -15,7 +15,7 @@ import ReelPlanScreen from './screens/ReelPlanScreen.jsx'
 import EndCardScreen from './screens/EndCardScreen.jsx'
 import FineTune from './screens/FineTune.jsx'
 import { TASK_META } from './taskMeta.js'
-import { upload, wake, prewarm, getRegions, createJob, jobStatus, absUrl } from './api.js'
+import { upload, wake, prewarm, getRegions, createJob, jobStatus, absUrl, caps, tierOf } from './api.js'
 import { loadAuth, saveAuth, authHeaders, requestCode, submitCode, me } from './auth.js'
 import { initAnalytics, track, identify } from './analytics.js'
 
@@ -36,7 +36,8 @@ export default function App() {
 
   const [auth, setAuth] = useState(loadAuth)
   const [up, setUp] = useState(null)
-  const [upErr, setUpErr] = useState(null)   // sticky rejection message on the dropzone
+  const [upErr, setUpErr] = useState(null)   // sticky rejection: { message, options: [{job,label}] }
+  const lastFileRef = useRef(null)           // the rejected File — kept for one-tap retry on a bigger tier
   const [job, setJob] = useState(null)
   const [video, setVideo] = useState(null)
   const jobRef = useRef(null)
@@ -104,6 +105,7 @@ export default function App() {
     if (!file.type.startsWith('video/')) { showToast('That doesn’t look like a video'); return }
     const jobHint = jobRef.current
     setUpErr(null)
+    lastFileRef.current = file
     setUp({ name: file.name, pct: 0 })
     let res = null
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
@@ -113,8 +115,22 @@ export default function App() {
         if (attempt === 0) { showToast('Hiccup while uploading — retrying…'); setUp({ name: file.name, pct: 0 }) }
       }
     }
-    if (!res) { setUp(null); track('upload_failed', { reason: 'network' }); setUpErr('Could not reach the server — check your connection and try again.'); return }
-    if (!res.ok) { setUp(null); track('upload_failed', { reason: 'rejected', code: res.status }); setUpErr(res.data?.detail || 'That upload didn’t work — try again.'); return }
+    if (!res) { setUp(null); track('upload_failed', { reason: 'network' }); setUpErr({ message: 'Could not reach the server — check your connection and try again.', options: [] }); return }
+    if (!res.ok) {
+      setUp(null); track('upload_failed', { reason: 'rejected', code: res.status })
+      const detail = res.data?.detail || 'That upload didn’t work — try again.'
+      // a clip too big/long for THIS job may fit a roomier tier — offer the switch
+      const secs = res.status === 413 ? (detail.match(/is (\d+)s/) ? Number(detail.match(/is (\d+)s/)[1]) : null) : null
+      const fits = (t) => file.size <= (caps[t].mb << 20) && (secs == null || secs <= caps[t].seconds)
+      const options = []
+      const tier = tierOf(jobHint)
+      if (res.status === 413 && tier === 'gpu' && fits('cpu'))
+        options.push({ job: 'caption', label: `Caption it instead — up to ${Math.round(caps.cpu.seconds / 60)} min` })
+      if (res.status === 413 && tier !== 'reel' && fits('reel'))
+        options.push({ job: 'reel', label: `Make a Reel with it — up to ${Math.round(caps.reel.seconds / 60)} min` })
+      setUpErr({ message: detail, options })
+      return
+    }
     const d = res.data
     track('upload_ok', { seconds: d.seconds, w: d.width, h: d.height })
     prewarm(jobHint === 'erase' ? 'erase' : jobHint === 'enhance' ? 'enhance' : 'remove')
@@ -376,7 +392,10 @@ export default function App() {
               )}
             </div>
           </header>
-          <Home uploading={up} error={upErr} onFile={startUpload} hint={job} onHint={setHint} />
+          <Home
+            uploading={up} error={upErr} onFile={startUpload} hint={job} onHint={setHint}
+            onRetry={(j) => { setHint(j); startUpload(lastFileRef.current) }}
+          />
         </>
       )}
       {screen === 'analyzing' && <Analyzing />}

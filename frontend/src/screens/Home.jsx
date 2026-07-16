@@ -18,7 +18,7 @@ const JOBS = [
   { id: 'caption', Icon: MessageSquare, title: 'Add captions', desc: 'Auto subtitles' },
 ]
 
-export default function Home({ uploading, error, onFile, hint, onHint }) {
+export default function Home({ uploading, error, onFile, hint, onHint, onRetry }) {
   const inputRef = useRef(null)
   const [drag, setDrag] = useState(false)
   const [demosOpen, setDemosOpen] = useState(() => window.location.hash === '#demos')
@@ -67,8 +67,14 @@ export default function Home({ uploading, error, onFile, hint, onHint }) {
           <>
             <div className="tile err">!</div>
             <div className="t1">That didn’t work</div>
-            <div className="t2 err">{error}</div>
-            <div className="t2">Tap to try another clip</div>
+            <div className="t2 err">{error.message}</div>
+            {error.options?.map(o => (
+              <span key={o.job} className="cr-retry"
+                    onClick={(e) => { e.stopPropagation(); onRetry(o.job) }}>
+                {o.label} →
+              </span>
+            ))}
+            <div className="t2">…or tap to try another clip</div>
           </>
         ) : (
           <>
