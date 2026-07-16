@@ -402,6 +402,7 @@ export default function App() {
       {screen === 'mark' && video && (
         <Mark
           video={video} regions={regions} selected={selected} setSelected={setSelected}
+          onAddRegion={(r) => { setRegions(rs => [...rs, r]); setSelected(sel => new Set(sel).add(r.id)) }}
           onBack={reset} onPreview={startPreview} showToast={showToast}
         />
       )}

@@ -873,6 +873,73 @@ def _detect_soft_overlay(meanf, std_gray=None):
     return mask, B
 
 
+def _layer_from_mean(meanf, iters=2):
+    """CLE-45: estimate the overlay layer straight from the temporal mean —
+    B = meanf − inpaint(meanf over the mark) — with one support-refinement pass.
+    Makes NO lattice assumption, so offset/rhombic tile grids (most real
+    watermarks) work as well as rectangular ones. Returns (B, support_mask)."""
+    mgray = cv2.cvtColor(np.clip(meanf, 0, 255).astype(np.uint8),
+                         cv2.COLOR_BGR2GRAY).astype(np.float32)
+    prom = np.maximum(mgray - cv2.GaussianBlur(mgray, (0, 0), 9), 0)
+    m = cv2.dilate((prom > np.percentile(prom, 90)).astype(np.uint8),
+                   np.ones((3, 3), np.uint8))
+    B = None
+    for _ in range(max(1, iters)):
+        bg = cv2.inpaint(np.clip(meanf, 0, 255).astype(np.uint8), m, 4,
+                         cv2.INPAINT_NS).astype(np.float32)
+        B = np.clip(meanf - bg, 0, None)
+        lay = B.mean(2)
+        pos = lay[lay > 0.5]
+        thr = max(2.0, float(np.percentile(pos, 25))) if pos.size else 2.0
+        m = cv2.dilate((lay > thr).astype(np.uint8), np.ones((3, 3), np.uint8))
+    return B, m
+
+
+def _calibrate_gain_pc(path, B, meanf, n):
+    """Per-channel variant of _calibrate_gain (real overlays are rarely
+    channel-uniform). Returns a (3,) vector — broadcasts everywhere the scalar
+    gain did (`gain * B * r`)."""
+    C = 245.0
+    def hp(x):
+        return x - cv2.GaussianBlur(x, (0, 0), 6)
+    num = np.zeros(3); de = np.zeros(3)
+    for i, f in enumerate(frames_iter(path)):
+        if i % max(1, n // 6):
+            continue
+        O = f.astype(np.float32); r = np.clip((C - O) / (C - meanf + 1e-3), 0, 2.5)
+        for c in range(3):
+            D = hp(O[..., c]) - hp(O[..., c] - B[..., c] * r[..., c])
+            num[c] += float((hp(O[..., c]) * D).sum()); de[c] += float((D * D).sum())
+    return np.clip(num / np.maximum(de, 1e-6), 0.5, 2.0)
+
+
+def _score_layer(path, B, region, meanf, n):
+    """How well does subtracting B·r flatten the mark on 2 sampled frames?
+    `region` must be the SAME pixels for every candidate (use the union of
+    candidate masks) or the scores aren't comparable. Lower mean residual
+    high-pass energy = better candidate."""
+    C = 245.0
+    def hp(x):
+        g = cv2.cvtColor(np.clip(x, 0, 255).astype(np.uint8),
+                         cv2.COLOR_BGR2GRAY).astype(np.float32)
+        return g - cv2.GaussianBlur(g, (0, 0), 6)
+    total, cnt = 0.0, 0
+    cap = cv2.VideoCapture(path)
+    try:
+        for idx in (n // 3, (2 * n) // 3):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, idx))
+            ok, f = cap.read()
+            if not ok:
+                continue
+            O = f.astype(np.float32)
+            r = np.clip((C - O) / (C - meanf + 1e-3), 0, 3.0)
+            v = hp(O - B * r)[region > 0]
+            total += float((v ** 2).sum()); cnt += v.size
+    finally:
+        cap.release()
+    return total / max(cnt, 1)
+
+
 def detect(path):
     """Return dict(type, mask, B, meanf, gain). type in tiled|logo-soft|logo|none."""
     w, h, fps, n = probe(path)
@@ -890,13 +957,32 @@ def detect(path):
 
     lat = _find_lattice(wm)
     if lat and lat[2] > 0.10:                       # strong periodicity -> TILED
-        B = _refine_and_extract(meanf, lat[0], lat[1])
-        if B is not None:
-            gain = _calibrate_gain(path, B, meanf, n)
-            prom = np.maximum(B.mean(2) - cv2.GaussianBlur(B.mean(2), (0, 0), 9), 0)
-            mask = (prom > np.percentile(prom, 63)).astype(np.uint8)
-            mask = cv2.dilate(cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)),
-                              np.ones((3, 3), np.uint8))
+        # CLE-45: two candidate overlay layers, keep whichever measurably
+        # flattens the mark better. The lattice tile-average bleeds moving
+        # background into B (and fails outright on offset/rhombic grids —
+        # eval: 15-17 dB vs 26 dB for the inpainted-mean layer), so the
+        # mean-layer estimate is usually the winner; the score keeps us honest.
+        cands = []
+        B_lat = _refine_and_extract(meanf, lat[0], lat[1])
+        if B_lat is not None:
+            prom = np.maximum(B_lat.mean(2) - cv2.GaussianBlur(B_lat.mean(2), (0, 0), 9), 0)
+            m_lat = (prom > np.percentile(prom, 63)).astype(np.uint8)
+            m_lat = cv2.dilate(cv2.morphologyEx(m_lat, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)),
+                               np.ones((3, 3), np.uint8))
+            cands.append(("lattice", B_lat, m_lat))
+        B_mean, m_mean = _layer_from_mean(meanf)
+        if B_mean is not None and m_mean.any():
+            cands.append(("meanlayer", B_mean,
+                          cv2.dilate(m_mean, np.ones((3, 3), np.uint8))))
+        if cands:
+            union = cands[0][2].copy()
+            for _, _, m in cands[1:]:
+                union |= m
+            best = min(cands, key=lambda c: _score_layer(path, c[1], union, meanf, n))
+            name, B, mask = best
+            gain = _calibrate_gain_pc(path, B, meanf, n)
+            print(f"[engine] tiled layer estimator = {name} "
+                  f"(gain {np.round(gain, 2).tolist()})", flush=True)
             return dict(type="tiled", mask=mask, B=B, meanf=meanf, gain=gain)
 
     # SEMI-TRANSPARENT static logo / wordmark (e.g. a stock-site stamp) -> reverse-blend
@@ -1998,7 +2084,9 @@ def autotune(path, info, mask_bin, inp, protect=True, k=4, limit=None):
     (best_info, best_mask, qc_report). This is the automated 'reiterate on
     anomaly' step — done on samples so we render the full clip only once."""
     B = info.get("B")
-    base_gain = float(info.get("gain", 0.0))
+    # gain may be a scalar (legacy) or a (3,) per-channel vector (CLE-45) —
+    # np.asarray keeps the auto-tune's gain-multiplier axis working for both.
+    base_gain = np.asarray(info.get("gain", 0.0), dtype=np.float32)
     # gain only matters for reverse-blend; skip that axis when B is None
     gain_mults = [1.0, 1.4] if B is not None else [1.0]
     dilations = [0, 4]

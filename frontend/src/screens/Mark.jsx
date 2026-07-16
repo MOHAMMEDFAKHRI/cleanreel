@@ -8,7 +8,7 @@ import { frameUrl } from '../api.js'
  * canvas-still coordinates, and the still is rendered at its natural aspect,
  * so percentage positioning maps taps exactly.
  */
-export default function Mark({ video, regions, selected, setSelected, onBack, onPreview, showToast }) {
+export default function Mark({ video, regions, selected, setSelected, onAddRegion, onBack, onPreview, showToast }) {
   const frameRef = useRef(null)
   const [coachSeen, setCoachSeen] = useState(false)
   const [ripple, setRipple] = useState(null)   // {x,y,key} in % of frame
@@ -51,8 +51,17 @@ export default function Mark({ video, regions, selected, setSelected, onBack, on
       .filter(r => x >= r.bbox[0] && x <= r.bbox[0] + r.bbox[2] && y >= r.bbox[1] && y <= r.bbox[1] + r.bbox[3])
       .sort((a, b) => a.bbox[2] * a.bbox[3] - b.bbox[2] * b.bbox[3])[0]
     if (hit) { toggle(hit); return }
+    // nothing detected here — the user knows better: mark the spot manually.
+    // 'spot' regions flow to the render as boxes → the GPU inpaint handles them.
+    const side = Math.round(0.16 * Math.min(W, H))
+    const bx = Math.max(0, Math.min(W - side, Math.round(x - side / 2)))
+    const by = Math.max(0, Math.min(H - side, Math.round(y - side / 2)))
+    const n = regions.filter(r => r.kind === 'spot').length + 1
+    onAddRegion({ id: `tap-${Date.now()}`, kind: 'spot', label: `Marked spot${n > 1 ? ' ' + n : ''}`,
+                  bbox: [bx, by, side, side], confidence: null, moving: false, preselected: false })
+    setCoachSeen(true)
     setRipple({ x: px * 100, y: py * 100, key: Date.now() })
-    showToast('Nothing removable there — tap the thing itself')
+    showToast('Marked — we’ll clean that spot')
   }
 
   const ctaLabel = selCount === 0 ? 'Select something to remove'
