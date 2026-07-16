@@ -31,3 +31,14 @@
   for = "/demos/*"
   [headers.values]
     Cache-Control = "public, max-age=604800"
+
+# Redesign SPA (/new/) — hashed assets cache forever, HTML revalidates.
+[[headers]]
+  for = "/new/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/new/*"
+  [headers.values]
+    X-Robots-Tag = "noindex"

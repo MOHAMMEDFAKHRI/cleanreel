@@ -1,0 +1,119 @@
+/* ============================================================
+   CleanReel design tokens — redesign "2a" (CLE-44)
+   Source of truth: design_handoff_cleanreel_redesign/README.md
+   Light "grey-white" + full dark mode via [data-theme="dark"]
+   ============================================================ */
+
+:root {
+  /* surfaces */
+  --bg: #eceef4;
+  --card: #f7f8fb;
+  --sheet: #f4f5f9;
+  --field: #ffffff;
+  --line: #e4e6ee;
+  --line2: #e3e5f2;
+
+  /* text */
+  --ink: #171a2b;
+  --mut: #767c96;
+  --faint: #9ba1ba;
+
+  /* accent (same in both themes) */
+  --acc: #5b63e8;
+  --acc2: #8a5cf0;
+  --grad: linear-gradient(90deg, var(--acc), var(--acc2));
+  --grad135: linear-gradient(135deg, var(--acc), var(--acc2));
+
+  /* tints & affordances */
+  --tint: #eceefc;
+  --tinth: #e0e3fa;
+  --tint2: #f2f3fe;      /* dropzone tint */
+  --dash: #b9befa;
+  --dash2: #c9cdee;
+  --chipbrd: #d6d9f8;
+  --chipink: #3f46c4;
+
+  /* status */
+  --ok: #13915f;
+  --okbg: #e9f9f1;
+
+  /* toast (light = inverted) */
+  --toastbg: #171a2b;
+  --toastink: #ffffff;
+
+  /* presentation backdrop */
+  --desk: #e6e8f2;
+
+  /* shadows */
+  --sh-card: 0 1px 3px rgba(23, 26, 43, 0.04);
+  --sh-cta: 0 8px 20px rgba(91, 99, 232, 0.35);
+  --sh-tile: 0 6px 16px rgba(91, 99, 232, 0.35);
+  --sh-toast: 0 8px 24px rgba(23, 26, 43, 0.35);
+}
+
+[data-theme='dark'] {
+  --bg: #101322;
+  --card: #1a1e32;
+  --sheet: #171b2e;
+  --field: #12162a;
+  --line: #272c48;
+  --line2: #272c48;
+
+  --ink: #eef0fb;
+  --mut: #8b91ad;
+  --faint: #6b7190;
+
+  --tint: #232848;
+  --tinth: #2a3054;
+  --tint2: #191d33;
+  --dash: #4a52a8;
+  --dash2: #3a4070;
+  --chipbrd: #333963;
+  --chipink: #aab2ff;
+
+  --ok: #36d39b;
+  --okbg: #0f2a1f;
+
+  --toastbg: #eef0fb;
+  --toastink: #171a2b;
+
+  --desk: #0a0c16;
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+input { font: inherit; }
+
+/* ---------- animations ---------- */
+@keyframes crPop {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes crScan {
+  0%   { top: 8%; }
+  50%  { top: 88%; }
+  100% { top: 8%; }
+}
+@keyframes crPulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(91, 99, 232, 0.25), 0 0 22px rgba(91, 99, 232, 0.5); }
+  50%      { box-shadow: 0 0 0 2px rgba(91, 99, 232, 0.12), 0 0 10px rgba(91, 99, 232, 0.25); }
+}
+@keyframes crSpin { to { transform: rotate(360deg); } }
+@keyframes crCheck {
+  0% { transform: scale(0.4); } 70% { transform: scale(1.12); } 100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-scanline { animation: none !important; display: none; }
+  .cr-pulse { animation: none !important; }
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
