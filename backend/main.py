@@ -452,6 +452,149 @@ def detect_regions(fid: str, targets: str = "face"):
     return {"boxes": boxes, "targets": tgs}
 
 
+# --------------------------------------------------------------------------- #
+# CLE-44 phase (b): region metadata for the guided mark screen's tap-to-select.
+# One call returns EVERY candidate the user could tap, each with a
+# plain-language label, a moving flag, and whether the analyzer pre-selected
+# it — the front end never has to know detector internals.
+# --------------------------------------------------------------------------- #
+_REGION_TARGETS = ("marks", "face", "plate")     # 'marks' = static overlays
+
+
+def _frame_at(path, idx):
+    """One decoded BGR frame by index (None on failure)."""
+    cap = cv2.VideoCapture(path)
+    try:
+        if idx > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ok, f = cap.read()
+        return f if ok else None
+    finally:
+        cap.release()
+
+
+def _pad_bbox(x, y, bw, bh, W, H, pad=0.05):
+    """Slightly padded int bbox, clamped to the frame — a friendlier tap
+    target than the raw detector rectangle."""
+    px = max(2, int(round(bw * pad))); py = max(2, int(round(bh * pad)))
+    x0 = max(0, int(round(x)) - px); y0 = max(0, int(round(y)) - py)
+    x1 = min(W, int(round(x + bw)) + px); y1 = min(H, int(round(y + bh)) + py)
+    return [x0, y0, max(1, x1 - x0), max(1, y1 - y0)]
+
+
+def _mark_regions(meta):
+    """Static-overlay detections (watermark / logo) as regions. Reuses the
+    same cached detection the render pipeline uses, so what gets pre-selected
+    here is exactly what a remove job would target."""
+    det = meta.get("_det")
+    if det is None:
+        det = wr.detect(meta["path"]); meta["_det"] = det
+    t = det.get("type", "none"); m = det.get("mask")
+    if t == "none" or m is None or not (m > 0).any():
+        return [], t
+    W, H = meta["w"], meta["h"]
+    m8 = (m > 0).astype(np.uint8)
+    kind, label, conf = {
+        "tiled":     ("watermark", "Watermark pattern", 0.92),
+        "logo-soft": ("watermark", "Watermark",         0.85),
+        "logo":      ("logo",      "Logo",              0.75),
+    }[t]
+    if t == "tiled":                     # lattice covers the frame -> one region
+        ys, xs = np.nonzero(m8)
+        bbox = _pad_bbox(xs.min(), ys.min(),
+                         xs.max() - xs.min() + 1, ys.max() - ys.min() + 1, W, H)
+        return [dict(id="mark-0", kind=kind, label=label, bbox=bbox,
+                     confidence=conf, moving=False, preselected=True)], t
+    # compact overlays: merge nearby blobs, keep the biggest few
+    merged = cv2.dilate(m8, np.ones((15, 15), np.uint8))
+    nlab, lab, stats, _ = cv2.connectedComponentsWithStats(merged)
+    comps = [(stats[k][4], stats[k][:4]) for k in range(1, nlab)
+             if stats[k][4] >= 0.0004 * m8.size]
+    comps.sort(key=lambda c: -c[0])
+    out = []
+    for i, (_, (x, y, bw, bh)) in enumerate(comps[:6]):
+        out.append(dict(id=f"mark-{i}", kind=kind,
+                        label=label if len(comps) == 1 else f"{label} {i + 1}",
+                        bbox=_pad_bbox(x, y, bw, bh, W, H),
+                        confidence=conf, moving=False, preselected=True))
+    return out, t
+
+
+def _privacy_regions(meta, tgs):
+    """Face/plate regions anchored to the SAME canvas still the mark screen
+    shows (so bboxes line up with what the user sees). Two extra sampled
+    frames across the preview span decide the `moving` flag for real instead
+    of assuming it."""
+    W, H = meta["w"], meta["h"]
+    cache = meta.get("_frame")
+    if cache is not None:
+        f0 = cv2.imdecode(np.frombuffer(cache, np.uint8), cv2.IMREAD_COLOR)
+    else:
+        f0, idx = wr.sharpest_frame(meta["path"], limit=_canvas_limit(meta),
+                                    with_index=True)
+        if f0 is not None:
+            meta["_sharp_t"] = idx / max(meta.get("fps") or 24.0, 1e-6)
+    if f0 is None:
+        return []
+    lim = _canvas_limit(meta)
+    laters = [f for f in (_frame_at(meta["path"], lim // 2),
+                          _frame_at(meta["path"], max(lim - 1, 1))) if f is not None]
+    diag = float(np.hypot(W, H)); out = []
+    names = {"face": "Face", "plate": "Plate"}
+    for tg in tgs:
+        base = wr.detect_privacy_boxes(f0, [tg])
+        if not base:
+            continue
+        later_boxes = [wr.detect_privacy_boxes(f, [tg]) for f in laters]
+        for i, (x, y, bw, bh) in enumerate(base):
+            cx, cy = x + bw / 2.0, y + bh / 2.0
+            moving = False
+            for boxes in later_boxes:    # nearest same-kind detection later on
+                best = None
+                for (X, Y, BW, BH) in boxes:
+                    d = float(np.hypot(X + BW / 2.0 - cx, Y + BH / 2.0 - cy))
+                    if best is None or d < best:
+                        best = d
+                if best is not None and best > 0.025 * diag:
+                    moving = True; break
+            out.append(dict(
+                id=f"{tg}-{i}", kind=tg,
+                label=names[tg] if len(base) == 1 else f"{names[tg]} {i + 1}",
+                bbox=_pad_bbox(x, y, bw, bh, W, H),
+                confidence=0.8 if tg == "face" else 0.6,
+                moving=moving, preselected=False))
+    return out
+
+
+@app.post("/api/regions/{fid}")
+def regions(fid: str, targets: str = "marks,face,plate"):
+    """Everything tappable on the mark screen, in canvas-still coordinates:
+    [{id, kind, label, bbox:[x,y,w,h], confidence, moving, preselected}].
+    kinds: watermark | logo | face | plate. Static overlays are pre-selected
+    (the analyzer found the problem); faces/plates are offered, not chosen.
+    Cached per (file, targets) — repeat calls are free."""
+    meta = FILES.get(fid)
+    if not meta:
+        raise HTTPException(404, "Unknown file_id (upload first).")
+    tgs = [t.strip().lower() for t in (targets or "").split(",") if t.strip()]
+    if not tgs or any(t not in _REGION_TARGETS for t in tgs):
+        raise HTTPException(400, "targets must be a comma list from "
+                                 "'marks' / 'face' / 'plate'.")
+    key = ",".join(sorted(tgs))
+    cached = meta.setdefault("_regions", {}).get(key)
+    if cached is not None:
+        return cached
+    regs, wm_type = ([], "none")
+    if "marks" in tgs:
+        regs, wm_type = _mark_regions(meta)
+    regs += _privacy_regions(meta, [t for t in tgs if t in ("face", "plate")])
+    resp = {"regions": regs, "watermark_type": wm_type,
+            "frame": {"w": meta["w"], "h": meta["h"],
+                      "t": round(float(meta.get("_sharp_t") or 0.0), 3)}}
+    meta["_regions"][key] = resp
+    return resp
+
+
 class JobRequest(BaseModel):
     file_id: str
     mode: str = "preview"                 # 'preview' (free) | 'export' (paid)
