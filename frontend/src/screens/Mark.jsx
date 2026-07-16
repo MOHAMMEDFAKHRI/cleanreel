@@ -48,6 +48,7 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
     const x = px * W, y = py * H
     // smallest region containing the point wins (nested boxes)
     const hit = regions
+      .filter(r => !r.whole)   // the whole-frame pattern is chip-managed — taps pass through
       .filter(r => x >= r.bbox[0] && x <= r.bbox[0] + r.bbox[2] && y >= r.bbox[1] && y <= r.bbox[1] + r.bbox[3])
       .sort((a, b) => a.bbox[2] * a.bbox[3] - b.bbox[2] * b.bbox[3])[0]
     if (hit) { toggle(hit); return }
@@ -83,6 +84,13 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
         <img src={frameUrl(video.fileId)} alt="" draggable={false} />
         {regions.map(r => {
           const on = selected.has(r.id)
+          if (r.whole) {
+            return on ? (
+              <div key={r.id} className="cr-wholeframe">
+                <span className="cr-dettag" style={{ top: 8, bottom: 'auto' }}>✓ pattern selected — everywhere</span>
+              </div>
+            ) : null
+          }
           const [x, y, w, h] = r.bbox
           const style = {
             left: `${(x / W) * 100}%`, top: `${(y / H) * 100}%`,

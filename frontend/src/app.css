@@ -568,3 +568,10 @@
   font-size: 12px; font-weight: 700; cursor: pointer; animation: crPop 0.25s ease;
 }
 .cr-retry:hover { background: var(--tinth); }
+
+/* whole-frame pattern indicator: slim edge outline, taps pass through */
+.cr-wholeframe {
+  position: absolute; inset: 3px; border: 2px solid var(--acc); border-radius: 13px;
+  pointer-events: none; animation: crPulse 1.8s ease infinite;
+}
+.cr-wholeframe .cr-dettag { left: 50%; transform: translateX(-50%); position: absolute; }

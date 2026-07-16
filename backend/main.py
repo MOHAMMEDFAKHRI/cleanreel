@@ -528,7 +528,10 @@ def _mark_regions(meta):
         ys, xs = np.nonzero(m8)
         bbox = _pad_bbox(xs.min(), ys.min(),
                          xs.max() - xs.min() + 1, ys.max() - ys.min() + 1, W, H)
-        return [dict(id="mark-0", kind=kind, label=label, bbox=bbox,
+        # `whole` tells the client this region spans the frame: render it as a
+        # frame-edge indicator + chip, and EXCLUDE it from tap hit-testing so
+        # taps can still reach corner logos / manual spots underneath (CLE-45).
+        return [dict(id="mark-0", kind=kind, label=label, bbox=bbox, whole=True,
                      confidence=conf, moving=False, preselected=True)], t
     # compact overlays: merge nearby blobs, keep the biggest few
     merged = cv2.dilate(m8, np.ones((15, 15), np.uint8))
