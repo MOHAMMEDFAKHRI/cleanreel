@@ -11,6 +11,9 @@ import EnhanceScreen from './screens/EnhanceScreen.jsx'
 import ReframeScreen from './screens/ReframeScreen.jsx'
 import BlurScreen from './screens/BlurScreen.jsx'
 import CaptionsScreen, { LOOKS } from './screens/CaptionsScreen.jsx'
+import ReelPlanScreen from './screens/ReelPlanScreen.jsx'
+import EndCardScreen from './screens/EndCardScreen.jsx'
+import FineTune from './screens/FineTune.jsx'
 import { TASK_META } from './taskMeta.js'
 import { upload, wake, prewarm, getRegions, createJob, jobStatus, absUrl } from './api.js'
 import { loadAuth, saveAuth, authHeaders, requestCode, submitCode, me } from './auth.js'
@@ -45,6 +48,8 @@ export default function App() {
   const [reframeOpts, setReframeOpts] = useState({ ratio: '9:16', fit: 'crop', focus: null })
   const [blurOpts, setBlurOpts] = useState({ faces: true, plates: true, style: 'blur' })
   const [capOpts, setCapOpts] = useState({ look: 'bold' })
+  const [reelOpts, setReelOpts] = useState({ crop: true, captions: true, look: 'bold', endCard: false, cta: '', cardTheme: 'dark', trimStart: null, trimEnd: null, cleanAudio: false })
+  const [packs, setPacks] = useState(null)
   const [email, setEmail] = useState(auth?.email || '')
   const [sheetErr, setSheetErr] = useState(null)
   const [sheetBusy, setSheetBusy] = useState(false)
@@ -57,6 +62,26 @@ export default function App() {
 
   useEffect(() => {
     wake(); initAnalytics(loadAuth()?.email)
+    // hash handling so this UI can live at the site root:
+    //   #login=TOKEN  magic-link target · #paid Stripe return · #tool=X SEO deep links
+    const h = window.location.hash
+    const API = window.API_BASE || 'https://cleanreel.onrender.com'
+    if (h.startsWith('#login=')) {
+      const token = h.slice(7); history.replaceState(null, '', window.location.pathname)
+      fetch(API + '/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) { const a = { session: d.session, email: d.email, credits: d.credits }; setAuth(a); saveAuth(a); identify(d.email); showToast('Signed in as ' + d.email) } else showToast('That sign-in link expired — request a new one') })
+        .catch(() => {})
+    } else if (h === '#paid') {
+      history.replaceState(null, '', window.location.pathname)
+      const a = loadAuth()
+      if (a) me(a).then(info => { if (info && !info.expired) { const na = { ...a, credits: info.credits }; setAuth(na); saveAuth(na); showToast('Thanks — credits added!') } }).catch(() => {})
+    } else if (h.startsWith('#tool=')) {
+      const map = { remove: 'remove', erase: 'erase', enhance: 'enhance', reframe: 'reframe', blur: 'blur', captions: 'caption', reel: 'reel' }
+      const t = map[h.slice(6)]
+      history.replaceState(null, '', window.location.pathname)
+      if (t) { setJob(t); showToast('Add your video — we’ll take it from there') }
+    }
     return () => clearInterval(pollRef.current)
   }, [])
 
@@ -76,7 +101,7 @@ export default function App() {
     let res = null
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
       try {
-        res = await upload(file, { onProgress: (pct) => setUp({ name: file.name, pct }) })
+        res = await upload(file, { intent: jobHint === 'reel' ? 'reel' : undefined, onProgress: (pct) => setUp({ name: file.name, pct }) })
       } catch {
         if (attempt === 0) { showToast('Hiccup while uploading — retrying…'); setUp({ name: file.name, pct: 0 }) }
       }
@@ -115,7 +140,7 @@ export default function App() {
   }, [showToast])
 
   // which task is active = which decision screen launched the job
-  const activeTask = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions' }[job] || 'remove'
+  const activeTask = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions', reel: 'reel' }[job] || 'remove'
 
   const buildBody = useCallback((mode) => {
     const base = { file_id: video.fileId, mode, owns_rights: true }
@@ -134,11 +159,25 @@ export default function App() {
       const look = LOOKS.find(l => l.id === capOpts.look) || LOOKS[0]
       return { ...base, task: 'captions', ...look.params }
     }
+    if (activeTask === 'reel') {
+      const gcd = (a, b) => b ? gcd(b, a % b) : a
+      const g = gcd(video.width, video.height)
+      const look = LOOKS.find(l => l.id === reelOpts.look) || LOOKS[0]
+      return {
+        ...base, task: 'reel', fit: 'crop',
+        ratio: reelOpts.crop ? '9:16' : `${video.width / g}:${video.height / g}`,
+        captions: reelOpts.captions, ...(reelOpts.captions ? look.params : {}),
+        cta: reelOpts.endCard && reelOpts.cta.trim() ? reelOpts.cta.trim() : null,
+        card_theme: reelOpts.cardTheme,
+        trim_start: reelOpts.trimStart, trim_end: reelOpts.trimEnd,
+        clean_audio: reelOpts.cleanAudio,
+      }
+    }
     const chosen = regions.filter(r => selected.has(r.id))
     const anyMark = chosen.some(r => r.kind === 'watermark' || r.kind === 'logo')
     const extra = chosen.filter(r => !(r.kind === 'watermark' || r.kind === 'logo'))
     return { ...base, task: 'remove', auto: anyMark, boxes: extra.length ? extra.map(r => r.bbox) : null }
-  }, [activeTask, video, enhanceOpts, reframeOpts, blurOpts, capOpts, regions, selected])
+  }, [activeTask, video, enhanceOpts, reframeOpts, blurOpts, capOpts, reelOpts, regions, selected])
 
   /** Shared job runner for preview + export. */
   const runJob = useCallback(async (mode) => {
@@ -153,7 +192,7 @@ export default function App() {
     return { ok: r.ok, status: r.status, data: await r.json().catch(() => null) }
   }, [activeTask, buildBody, regions, selected, video, auth])
 
-  const decisionScreen = activeTask === 'remove' ? 'mark' : activeTask === 'captions' ? 'captions' : activeTask
+  const decisionScreen = activeTask === 'remove' ? 'mark' : activeTask === 'captions' ? 'captions' : activeTask === 'reel' ? 'reelplan' : activeTask
 
   const startPreview = useCallback(async () => {
     track('preview_click', { task: activeTask, selections: selected.size })
@@ -189,7 +228,14 @@ export default function App() {
     const res = await runJob('export')
     if (!res?.ok) {
       if (res?.status === 401) { setAuthBoth(null); setSheetErr(null); setSheet('email'); track('export_blocked_signin'); return }
-      if (res?.status === 402) { setSheet('credits'); track('export_blocked_credits'); return }
+      if (res?.status === 402) {
+        track('export_blocked_credits')
+        try {
+          const d = await fetch((window.API_BASE || 'https://cleanreel.onrender.com') + '/api/packs').then(r => r.json())
+          setPacks(d?.configured ? Object.entries(d.packs || {}) : [])
+        } catch { setPacks([]) }
+        setSheet('credits'); return
+      }
       setSheet(null); showToast(res?.data?.detail || 'Could not start the export — try again')
       return
     }
@@ -222,6 +268,19 @@ export default function App() {
     if (auth?.session) startExport()
     else { setSheetErr(null); setSheet('email') }
   }, [auth, startExport])
+
+  const onBuyPack = useCallback(async (packId) => {
+    track('checkout_started', { pack: packId })
+    try {
+      const r = await fetch((window.API_BASE || 'https://cleanreel.onrender.com') + '/api/checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders(auth) },
+        body: JSON.stringify({ pack: packId }),
+      })
+      const d = await r.json().catch(() => null)
+      if (r.ok && d?.url) window.location.href = d.url
+      else showToast(d?.detail || 'Could not start checkout')
+    } catch { showToast('Network hiccup — try again') }
+  }, [auth, showToast])
 
   const onSendCode = useCallback(async () => {
     setSheetBusy(true); setSheetErr(null)
@@ -286,6 +345,18 @@ export default function App() {
       {screen === 'captions' && video && (
         <CaptionsScreen opts={capOpts} setOpts={setCapOpts} onBack={reset} onPreview={startPreview} />
       )}
+      {screen === 'reelplan' && video && (
+        <ReelPlanScreen opts={reelOpts} setOpts={setReelOpts} onBack={reset}
+          onNext={() => reelOpts.endCard ? setScreen('endcard') : startPreview()} />
+      )}
+      {screen === 'endcard' && video && (
+        <EndCardScreen opts={reelOpts} setOpts={setReelOpts}
+          onBack={() => setScreen('reelplan')} onNext={startPreview} />
+      )}
+      {screen === 'finetune' && video && (
+        <FineTune video={video} opts={reelOpts} setOpts={setReelOpts}
+          onBack={() => setScreen('preview')} onRebuild={startPreview} />
+      )}
       {screen === 'working' && (
         <Working pct={workPct} title={TASK_META[activeTask].working.title} steps={TASK_META[activeTask].working.steps} />
       )}
@@ -298,6 +369,7 @@ export default function App() {
             : activeTask === 'blur' ? blurOpts : capOpts)}
           showBefore={TASK_META[activeTask].showBefore}
           onBack={() => setScreen(decisionScreen)} onSave={onSave}
+          onFineTune={activeTask === 'reel' ? () => setScreen('finetune') : null}
         />
       )}
       {screen === 'done' && done && (
@@ -309,6 +381,7 @@ export default function App() {
           onSendCode={onSendCode} onSubmitCode={onSubmitCode}
           onClose={() => sheet !== 'saving' && setSheet(null)}
           savePct={savePct} error={sheetErr} busy={sheetBusy}
+          packs={packs} onBuyPack={onBuyPack}
         />
       )}
       {toast && <div className="cr-toast" role="status">{toast}</div>}

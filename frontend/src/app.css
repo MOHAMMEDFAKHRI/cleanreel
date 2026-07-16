@@ -431,3 +431,48 @@
 .cr-look .note { font-size: 9.5px; color: var(--mut); }
 
 .cr-srtlink { color: var(--acc); font-weight: 700; }
+
+/* ---------- reel wizard (4a) + fine-tune + packs ---------- */
+.cr-reelcard {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: var(--tint); border: 1.5px solid var(--chipbrd); border-radius: 14px;
+  padding: 13px 14px; margin-bottom: 9px; color: var(--acc); text-align: left;
+  transition: background 0.15s ease;
+}
+.cr-reelcard:hover { background: var(--tinth); }
+.cr-reelcard .txt { display: flex; flex-direction: column; gap: 2px; }
+.cr-reelcard b { font-size: 13.5px; font-weight: 800; color: var(--ink); }
+.cr-reelcard i { font-style: normal; font-size: 11px; color: var(--mut); }
+
+.cr-cardpreview {
+  width: 148px; aspect-ratio: 9 / 16; border-radius: 12px; margin: 14px auto 0;
+  display: grid; place-items: center; padding: 12px; text-align: center;
+  font-size: 14px; font-weight: 800; position: relative;
+}
+.cr-cardpreview .mono {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  font-family: ui-monospace, monospace; font-size: 9px; font-weight: 400; opacity: 0.7;
+}
+.cr-ctainput {
+  width: 100%; margin-top: 14px; padding: 14px; border-radius: 12px;
+  border: 1.5px solid var(--line); background: var(--field); color: var(--ink);
+  font-size: 15px; outline: none;
+}
+.cr-ctainput:focus { border-color: var(--acc); }
+.cr-counter { text-align: right; font-size: 11px; color: var(--faint); margin-top: 5px; }
+.cr-swatches { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
+.cr-swatch { width: 40px; height: 26px; border-radius: 8px; border: 1.5px solid var(--line); }
+.cr-swatch.on { border: 2px solid var(--acc); box-shadow: 0 0 0 3px rgba(91, 99, 232, 0.15); }
+
+.cr-trimlabel { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--mut); }
+.cr-trimlabel input[type='range'] { accent-color: var(--acc); }
+
+.cr-packs { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.cr-pack {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 13px 14px;
+}
+.cr-pack:hover { border-color: var(--acc); }
+.cr-pack b { font-size: 13.5px; font-weight: 700; }
+.cr-pack span { font-size: 13.5px; font-weight: 800; color: var(--acc); }

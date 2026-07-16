@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { ArrowUp, Droplet, Eraser, Sparkles, Smartphone, EyeOff, MessageSquare } from 'lucide-react'
+import { ArrowUp, Droplet, Eraser, Sparkles, Smartphone, EyeOff, MessageSquare, Clapperboard } from 'lucide-react'
 
 const JOBS = [
   { id: 'remove',  Icon: Droplet,       title: 'Take a mark off my video', desc: 'Logos, watermarks, text' },
@@ -54,6 +54,10 @@ export default function Home({ uploading, onFile }) {
       </button>
 
       <div className="cr-label">Or pick a job</div>
+      <button className="cr-reelcard" onClick={() => !uploading && pick('reel')}>
+        <Clapperboard size={22} strokeWidth={2} />
+        <span className="txt"><b>Make a Reel</b><i>Cut, caption & crop — one pass, ready to post</i></span>
+      </button>
       <div className="cr-jobs">
         {JOBS.map(({ id, Icon, title, desc }) => (
           <button key={id} className="cr-job" onClick={() => !uploading && pick(id)}>
@@ -66,6 +70,7 @@ export default function Home({ uploading, onFile }) {
 
       <footer className="cr-foot">
         For videos you own or are licensed to edit · free preview on everything
+        <br /><a href="/studio.html" style={{ color: 'inherit' }}>Prefer the classic studio?</a>
       </footer>
     </>
   )

@@ -10,7 +10,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  *  saving → export progress (owned by App, shown here)
  *  credits→ out-of-credits message (401/402 fallback)
  */
-export default function SignInSheet({ step, email, setEmail, onSendCode, onSubmitCode, onClose, savePct, error, busy }) {
+export default function SignInSheet({ step, email, setEmail, onSendCode, onSubmitCode, onClose, savePct, error, busy, packs, onBuyPack }) {
   const [code, setCode] = useState('')
   const inputRef = useRef(null)
   useEffect(() => { inputRef.current?.focus() }, [step])
@@ -79,13 +79,18 @@ export default function SignInSheet({ step, email, setEmail, onSendCode, onSubmi
               <h3>Out of export credits</h3>
               <button className="close" onClick={onClose} aria-label="Close"><X size={16} /></button>
             </div>
-            <p className="body">
-              This export needs a credit. Packs are on the classic page for now —
-              your sign-in carries over.
-            </p>
-            <a className="cr-cta" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }} href="/">
-              Get a pack
-            </a>
+            <p className="body">One-time packs, no subscription. Credits never expire.</p>
+            {packs === null && <p className="foot">Loading packs…</p>}
+            {packs?.length === 0 && <p className="foot">Payments are being set up — check back soon.</p>}
+            {packs?.length > 0 && (
+              <div className="cr-packs">
+                {packs.map(([id, p]) => (
+                  <button key={id} className="cr-pack" onClick={() => onBuyPack(id)}>
+                    <b>{p.label}</b><span>${(p.amount / 100).toFixed(2)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

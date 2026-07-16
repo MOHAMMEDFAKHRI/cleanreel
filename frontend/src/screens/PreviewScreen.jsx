@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react'
 import { Check, ChevronLeft } from 'lucide-react'
 
 /** Preview screen (README §5): draggable before/after slider over the real clips. */
-export default function PreviewScreen({ preview, video, badgeWord, chips, showBefore = true, onBack, onSave }) {
+export default function PreviewScreen({ preview, video, badgeWord, chips, showBefore = true, onBack, onSave, onFineTune }) {
   const [pct, setPct] = useState(55)
   const frameRef = useRef(null)
   const dragging = useRef(false)
@@ -58,8 +58,9 @@ export default function PreviewScreen({ preview, video, badgeWord, chips, showBe
         <p className="cr-hint"><a className="cr-srtlink" href={preview.srtUrl}>Download the .srt — free</a></p>
       )}
 
-      <button className="cr-cta" onClick={onSave}>Save the full video</button>
-      <button className="cr-cta ghost" onClick={onBack}>Missed a spot — go back</button>
+      <button className="cr-cta" onClick={onSave}>{onFineTune ? 'Save my reel' : 'Save the full video'}</button>
+      {onFineTune && <button className="cr-cta ghost" onClick={onFineTune}>Fine-tune it</button>}
+      <button className="cr-cta ghost" onClick={onBack}>{onFineTune ? 'Change the plan' : 'Missed a spot — go back'}</button>
     </>
   )
 }

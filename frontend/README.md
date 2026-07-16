@@ -21,3 +21,15 @@ npm run dev        # local dev server (uses fallback API base)
 - (c) per-job decision screens  (d) reel wizard + fine-tune  (e) dark-mode QA
 
 Design tokens live in `src/tokens.css` (light + dark via `[data-theme]`).
+
+## Root swap-over (live since 16 Jul 2026)
+The redesign now serves at **/** (classic studio preserved at `/studio.html`).
+Two builds from the same source:
+```
+npm run build                          # → web/new/   (base /new/)
+cp index.html index.new.html && cp index.root.html index.html
+npx vite build -c vite.root.config.js  # → dist-root/ (base /, SEO meta)
+cp index.new.html index.html
+cp dist-root/index.html ../web/index.html && cp dist-root/assets/* ../web/assets/
+```
+Root handles `#login=` (magic link), `#paid` (Stripe return), `#tool=X` (SEO deep links).

@@ -24,6 +24,12 @@ export const TASK_META = {
     chips: (_, opts) => [opts.faces && 'Faces hidden', opts.plates && 'Plates hidden', opts.style === 'pixelate' ? 'Pixelated' : 'Soft blur'].filter(Boolean),
     showBefore: true,
   },
+  reel: {
+    working: { title: 'Building your reel', steps: ['Cutting to the best part', 'Cropping around the subject', 'Writing the captions', 'Stitching it together'] },
+    badge: () => 'Reel built',
+    chips: (_, opts) => [opts.crop && 'Cropped 9:16', opts.captions && 'Captions', opts.endCard && 'End card', opts.cleanAudio && 'Audio cleaned'].filter(Boolean),
+    showBefore: false,
+  },
   captions: {
     working: { title: 'Writing your captions', steps: ['Listening to the audio', 'Writing the words', 'Styling the captions', 'Burning them in'] },
     badge: () => 'Captioned',

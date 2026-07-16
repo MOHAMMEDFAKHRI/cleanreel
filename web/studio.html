@@ -1,0 +1,1529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CleanReel — Clean Up Videos You Own: Remove Watermarks, Logos & Objects</title>
+<meta name="description" content="The rights-aware video cleanup studio. Remove your old watermarks &amp; logos, erase objects, enhance &amp; upscale, reframe for TikTok/Reels/Shorts, blur faces &amp; plates — from footage you own. Free preview before you pay; uploads auto-delete."/>
+<link rel="canonical" href="https://cleanreel.app/"/>
+<meta name="robots" content="index,follow"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="CleanReel — Clean up &amp; repurpose videos you own"/>
+<meta property="og:description" content="Remove old logos &amp; watermarks, erase objects, enhance, reframe, blur faces — for footage you own or are licensed to edit. Free preview first."/>
+<meta property="og:url" content="https://cleanreel.app/"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="CleanReel — Clean up &amp; repurpose videos you own"/>
+<meta name="twitter:description" content="The rights-aware video cleanup studio. Free preview, sharp results, uploads auto-delete."/>
+<script>
+/* Analytics (PostHog, US cloud free tier). Set PH_KEY to your project's
+   public key to enable; while it's empty, tracking is FULLY disabled and
+   track() is a silent no-op. First-party localStorage persistence (no cookies,
+   no cross-site tracking) so returning visitors are recognised; person profiles
+   are created only for signed-in users (identified_only + identify() below). */
+const PH_KEY="phc_nkxXK3RjHVEvNKCqiKFuXsNecNyDpr2sU2YgTUFNPLL2", PH_HOST="https://us.i.posthog.com";
+if(PH_KEY){
+  const s=document.createElement('script'); s.src=PH_HOST+'/static/array.js'; s.async=true;
+  s.onload=()=>{ try{ posthog.init(PH_KEY,{api_host:PH_HOST,
+    persistence:'localStorage',person_profiles:'identified_only',autocapture:false});
+    if(typeof auth!=='undefined'&&auth&&auth.email) posthog.identify(auth.email,{email:auth.email}); }catch(e){} };
+  document.head.appendChild(s);
+}
+function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posthog.capture(ev,props||{}); }catch(e){} }
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"CleanReel",
+"applicationCategory":"MultimediaApplication","operatingSystem":"Web",
+"description":"Rights-aware online video cleanup studio for footage you own: remove your old watermarks and logos, erase objects, enhance and upscale, auto-reframe for vertical or square, and blur faces or plates.",
+"offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Free preview; low-cost export"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"How do I remove a watermark from a video?","acceptedAnswer":{"@type":"Answer","text":"Upload a short video you own, mark the watermark (or let CleanReel auto-detect it), preview the result for free, then export the cleaned video."}},
+{"@type":"Question","name":"Is it free?","acceptedAnswer":{"@type":"Answer","text":"Previews are free. Full exports use low-cost credits to cover GPU processing."}},
+{"@type":"Question","name":"Will it blur my video or ruin faces?","acceptedAnswer":{"@type":"Answer","text":"No. CleanReel protects faces and detailed areas and keeps your audio, so the subject stays sharp."}},
+{"@type":"Question","name":"Can I remove any watermark?","acceptedAnswer":{"@type":"Answer","text":"Use it only on content you own or are licensed to edit, such as your own free-tier exports, an old logo, or stray text."}}]}
+</script>
+<style>
+  :root{--bg:#0b0e1a;--card:#151a33;--line:#252b4d;--ink:#eef1fb;--mut:#9aa2c0;
+        --acc:#6c8cff;--acc2:#9a6cff;--ok:#36d39b}
+  *{box-sizing:border-box} html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.6 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);
+       background:radial-gradient(1200px 600px at 70% -10%,#1b2350 0,var(--bg) 55%)}
+  a{color:var(--acc);text-decoration:none}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  header{display:flex;justify-content:space-between;align-items:center;padding:14px 0;
+    position:sticky;top:0;z-index:60;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    background:rgba(11,14,26,.72);margin:0 -20px;padding-left:20px;padding-right:20px;
+    border-bottom:1px solid rgba(37,43,77,.55)}
+  .logo{font-weight:800;font-size:20px}
+  .logo span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  nav a{color:var(--mut);margin-left:20px;font-size:15px} nav a:hover{color:var(--ink)}
+  .hero{text-align:center;padding:54px 0 26px}
+  .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.1;margin:0 0 14px;font-weight:800}
+  .hero h1 span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{color:var(--mut);font-size:18px;max-width:640px;margin:0 auto 22px}
+  .btn{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#fff;border:0;border-radius:12px;
+       padding:13px 22px;font-weight:700;font-size:16px;cursor:pointer;display:inline-block}
+  .btn.ghost{background:#1c2342;color:var(--ink)} .btn:disabled{opacity:.45;cursor:not-allowed}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+  #tool{margin:26px 0;scroll-margin-top:20px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .step-tag{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--acc);margin:0 0 10px}
+  label.chk{display:flex;gap:9px;align-items:center;color:var(--mut);margin:10px 0;font-size:15px}
+  input[type=file]{color:var(--mut);width:100%}
+  video{width:100%;border-radius:12px;background:#000;margin-top:10px;max-height:380px}
+  .bar{height:8px;background:#1c2342;border-radius:6px;overflow:hidden;margin-top:12px}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .35s}
+  .pill{font-size:14px;color:var(--mut)} .ok{color:var(--ok)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  a.dl{display:none;margin-top:12px;color:var(--ok);font-weight:700}
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:14px 0}
+  @media(max-width:760px){.feat{grid-template-columns:1fr}}
+  .feat .card h3{margin:.1em 0 .3em;font-size:17px} .feat .card p{color:var(--mut);margin:0;font-size:15px}
+  .ba{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:4/5;--p:50%;touch-action:none;cursor:ew-resize;margin:4px 0 10px;user-select:none}
+  .ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+  .ba .ba-b{clip-path:inset(0 calc(100% - var(--p)) 0 0)}
+  .ba .ba-h{position:absolute;top:0;bottom:0;left:var(--p);width:2px;background:#fff;box-shadow:0 0 10px rgba(0,0,0,.6);transform:translateX(-1px)}
+  .ba .ba-h::after{content:"⇔";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:#fff;color:#0b0e1a;font-size:15px;line-height:30px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+  .ba .ba-t{position:absolute;bottom:8px;font-style:normal;text-decoration:none;font-size:11px;font-weight:700;letter-spacing:.4px;background:rgba(11,14,26,.72);color:var(--ink);padding:2px 9px;border-radius:20px}
+  .ba .bl{left:8px}.ba .br{right:8px}
+  h2.sec{font-size:26px;margin:38px 0 14px;text-align:center}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:760px){.steps{grid-template-columns:1fr}}
+  details{border-bottom:1px solid var(--line);padding:14px 2px} details summary{cursor:pointer;font-weight:600}
+  details p{color:var(--mut)}
+  footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line);margin-top:40px;padding:22px 0 50px;text-align:center}
+  .editor{position:relative;width:100%;border-radius:12px;overflow:hidden;background:#000}
+  .editor canvas.base{display:block;width:100%;height:auto}
+  .editor canvas.mask{position:absolute;left:0;top:0;width:100%;height:100%;opacity:.5;touch-action:none;cursor:crosshair}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  .tool{background:#1c2342;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:14px;cursor:pointer}
+  .tool.active{background:linear-gradient(90deg,var(--acc),var(--acc2));border-color:transparent}
+  .toolbar input[type=range]{accent-color:var(--acc)}
+  .hint{color:var(--mut);font-size:13px;margin:6px 0 0}
+  .acctbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}
+  .emailin{background:#0f1430;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:14px;min-width:190px}
+  .buypanel{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}
+  .pack{background:#0f1430;border:1px solid var(--line);border-radius:12px;padding:12px 16px;cursor:pointer;text-align:left;color:var(--ink)}
+  .pack b{display:block;font-size:16px} .pack span{color:var(--mut);font-size:13px}
+  .pack:hover{border-color:var(--acc)}
+  .modes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+  .modes .tool{padding:9px 14px;font-weight:600}
+  .optrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  .nudge{background:linear-gradient(90deg,rgba(108,140,255,.18),rgba(154,108,255,.18));
+    border:1px solid var(--acc);border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:15px}
+  @keyframes pulseA{0%,100%{box-shadow:0 0 0 0 rgba(108,140,255,0)}50%{box-shadow:0 0 0 4px rgba(108,140,255,.6)}}
+  .pulse{animation:pulseA 1s ease-in-out 2}
+  .warn{color:#ffb4b4}
+  /* ---- before/after compare ---- */
+  .cmp{position:relative;border-radius:12px;overflow:hidden;background:#000;margin:10px auto 0;
+       touch-action:none;cursor:ew-resize;user-select:none;max-width:100%}
+  .cmp video{position:absolute;inset:0;width:100%;height:100%;max-height:none;object-fit:cover;display:block;margin:0;border-radius:0}
+  .cmpDiv{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.8)}
+  .cmpDiv i{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;
+      border-radius:50%;background:var(--card);border:2px solid #fff;color:var(--ink);
+      display:flex;align-items:center;justify-content:center;font-style:normal;font-size:15px}
+  .cmpTag{position:absolute;top:8px;font-size:12px;font-weight:700;padding:3px 9px;border-radius:7px;
+      background:rgba(11,14,26,.75);color:var(--ink);pointer-events:none}
+  .cmpTag.l{left:8px} .cmpTag.r{right:8px}
+  .cmpSbs{display:none;gap:10px;margin-top:10px}
+  .cmpSbs figure{flex:1;margin:0;min-width:0}
+  .cmpSbs video{width:100%;margin:0;max-height:380px}
+  .cmpSbs figcaption{color:var(--mut);font-size:13px;text-align:center;margin-top:4px}
+  @media(max-width:620px){.cmpSbs{flex-direction:column}}
+  /* ---- glass & glow polish pass ---- */
+  .hero{position:relative}
+  .hero::before,.hero::after{content:"";position:absolute;border-radius:50%;filter:blur(70px);
+    pointer-events:none;z-index:-1;opacity:.55}
+  .hero::before{width:340px;height:340px;left:-90px;top:-40px;
+    background:radial-gradient(circle,rgba(108,140,255,.35),transparent 70%)}
+  .hero::after{width:300px;height:300px;right:-70px;top:60px;
+    background:radial-gradient(circle,rgba(154,108,255,.3),transparent 70%)}
+  .hero h1 span,.logo span{background:linear-gradient(90deg,var(--acc),var(--acc2),#5eead4,var(--acc));
+    background-size:280% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:hueSlide 9s linear infinite}
+  @keyframes hueSlide{to{background-position:280% 0}}
+  .card{background:linear-gradient(var(--card),var(--card)) padding-box,
+    linear-gradient(155deg,rgba(108,140,255,.35),rgba(37,43,77,.6) 40%,rgba(154,108,255,.28)) border-box;
+    border:1px solid transparent;box-shadow:0 10px 34px rgba(3,5,16,.45)}
+  .feat .card{transition:transform .22s,box-shadow .22s}
+  .feat .card:hover{transform:translateY(-4px);box-shadow:0 18px 44px rgba(3,5,16,.6),
+    0 0 24px rgba(108,140,255,.12)}
+  .btn{transition:transform .16s,box-shadow .2s,filter .2s;box-shadow:0 6px 20px rgba(108,140,255,.25)}
+  .btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.08);
+    box-shadow:0 10px 26px rgba(108,140,255,.4)}
+  .btn:active:not(:disabled){transform:translateY(0) scale(.985)}
+  .btn.ghost{box-shadow:none}
+  .tool{transition:transform .14s,border-color .18s,box-shadow .18s}
+  .tool:hover{border-color:var(--acc)}
+  .tool.active{box-shadow:0 3px 14px rgba(108,140,255,.35)}
+  .modes .tool.active{box-shadow:0 4px 18px rgba(108,140,255,.45)}
+  .bar>i{position:relative;overflow:hidden}
+  .bar>i::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);
+    animation:shimmer 1.4s linear infinite}
+  @keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+  .ba{box-shadow:0 8px 26px rgba(3,5,16,.5)}
+  ::selection{background:rgba(108,140,255,.4)}
+  @media (prefers-reduced-motion:reduce){
+    .hero h1 span,.logo span,.bar>i::after{animation:none}
+    .feat .card,.btn,.tool{transition:none}}
+  /* ---- site-wide choreography ---- */
+  .reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+  .feat .card.reveal,.steps .card.reveal{transition-delay:calc(var(--d,0)*90ms)}
+  h2.sec{position:relative;padding-bottom:12px}
+  h2.sec::after{content:"";position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+    width:52px;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+  .steps{counter-reset:step}
+  .steps .card{position:relative;padding-top:26px}
+  .steps .card::before{counter-increment:step;content:counter(step);position:absolute;top:-14px;left:18px;
+    width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:14px;color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc2));
+    box-shadow:0 4px 14px rgba(108,140,255,.45)}
+  details{transition:background .2s;border-radius:10px}
+  details:hover{background:rgba(108,140,255,.05)}
+  details summary{position:relative;padding-right:26px;list-style:none}
+  details summary::-webkit-details-marker{display:none}
+  details summary::after{content:"+";position:absolute;right:4px;top:0;font-size:19px;color:var(--acc);
+    transition:transform .25s}
+  details[open] summary::after{transform:rotate(45deg)}
+  .trustline{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+  .trustline span{font-size:13px;color:var(--mut);border:1px solid var(--line);border-radius:999px;
+    padding:5px 13px;background:rgba(21,26,51,.55);backdrop-filter:blur(6px)}
+  .trustline b{color:var(--ok)}
+  .ba{transition:transform .25s,box-shadow .25s}
+  .ba:hover{transform:scale(1.015);box-shadow:0 14px 36px rgba(3,5,16,.65),0 0 22px rgba(108,140,255,.15)}
+  ::-webkit-scrollbar{width:10px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:#252b4d;border-radius:6px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:#39418a}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}
+    .ba,.ba:hover{transform:none}}
+  /* ---- Make-a-Reel wizard + live phone preview ---- */
+  .reelgrid{display:grid;grid-template-columns:1fr 235px;gap:20px;align-items:start}
+  @media(max-width:700px){.reelgrid{grid-template-columns:1fr}
+    .phonecol{order:-1;margin-bottom:6px}.phone{max-width:190px}}
+  .rsteps{display:flex;gap:6px;margin:4px 0 12px;flex-wrap:wrap}
+  .rstep{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:999px;
+    padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+  .rstep.active{color:#fff;background:linear-gradient(90deg,var(--acc),var(--acc2));border-color:transparent;
+    box-shadow:0 4px 16px rgba(108,140,255,.35)}
+  .rstep.donestep{color:var(--ok);border-color:rgba(54,211,155,.4)}
+  .rnext{font-weight:700}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  .phone{position:relative;width:100%;max-width:235px;margin:0 auto;aspect-ratio:9/18.6;
+    border-radius:34px;background:#05060d;overflow:hidden;
+    border:3px solid #2b3263;box-shadow:0 22px 55px rgba(0,0,0,.55),0 0 0 1px rgba(124,92,255,.22),
+    0 0 40px rgba(108,140,255,.12)}
+  .pnotch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:34%;height:15px;
+    background:#05060d;border-radius:9px;z-index:6;border:1px solid #171b30}
+  .pscreen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(165deg,#1d2447,#0c1023 70%)}
+  #vwrap{position:relative;width:100%;height:100%;overflow:hidden;display:flex;
+    align-items:center;justify-content:center;transition:height .25s}
+  #vwrap.r11{height:auto;aspect-ratio:1/1}#vwrap.r45{height:auto;aspect-ratio:4/5}
+  #vwrap.r11,#vwrap.r45{background:#05060d;box-shadow:0 0 0 400px #05060d}
+  #vwrap video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;
+    margin:0;border-radius:0;max-height:none}
+  #vwrap.hasvid video{display:block}
+  #vempty{color:#5d668f;font-size:12px;text-align:center;line-height:1.7;letter-spacing:.4px}
+  #vwrap.hasvid #vempty{display:none}
+  #capMockTxt{position:absolute;left:6%;right:6%;bottom:9%;z-index:3;text-align:center;font-weight:800;
+    color:#fff;text-shadow:0 2px 4px #000,0 0 6px #000;font-size:12px;transition:all .15s;pointer-events:none}
+  #cardMock{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;
+    text-align:center;padding:0 14px;font-weight:800;font-size:13px;color:#fff;
+    background:linear-gradient(135deg,#0b0e1a,#2a1f5e);transition:background .2s}
+  #cardMock.show{display:flex;animation:cardIn .35s ease}
+  @keyframes cardIn{from{opacity:0;transform:scale(1.06)}to{opacity:1;transform:none}}
+  .pui{position:absolute;right:8px;bottom:52px;display:flex;flex-direction:column;gap:12px;z-index:5;
+    font-size:15px;opacity:.85;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))}
+  .pmeta{position:absolute;left:10px;bottom:14px;z-index:5;font-size:9.5px;color:rgba(255,255,255,.85);
+    text-shadow:0 1px 3px #000}
+  /* ---- mobile-first sharpening (CLE: phones ~360-430px) ---- */
+  @media(max-width:640px){
+    .wrap{padding:0 14px}
+    header{padding:14px 0}
+    nav a{margin-left:12px;font-size:14px}
+    .hero{padding:30px 0 16px}
+    .hero p{font-size:16px}
+    h2.sec{font-size:22px;margin:30px 0 12px}
+    .card{padding:16px 14px}
+    /* mode picker: one thumb-swipable strip instead of a 3-row wall */
+    .modes{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none;padding-bottom:4px;margin-right:-14px;padding-right:14px;
+      scroll-snap-type:x proximity}
+    .modes::-webkit-scrollbar{display:none}
+    .modes .tool{white-space:nowrap;flex:0 0 auto;scroll-snap-align:start;min-height:42px}
+    /* touch targets & iOS: 16px inputs stop the zoom-on-focus jump */
+    .tool{min-height:40px}
+    input[type=text],input[type=email],input[type=number],.emailin{font-size:16px}
+    .emailin{flex:1;min-width:0}
+    #reelCta{min-width:0 !important}
+    .acctbar .btn,.acctbar .emailin{width:auto}
+    /* the two actions that matter get the whole thumb row */
+    #prev,#exp{flex:1;min-height:50px;font-size:16px}
+    .buypanel .pack{flex:1;min-width:130px}
+    video{max-height:320px}
+    .optrow input[type=number]{width:76px !important}
+    footer{padding:18px 0 40px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">✨ Clean<span>Reel</span></div>
+    <nav><a href="#tool">Try it</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav>
+  </header>
+
+  <section class="hero">
+    <h1>Clean up &amp; <span>repurpose videos</span> you own</h1>
+    <p>Remove your old logos, watermarks and overlays, erase objects, enhance quality, blur
+       faces &amp; plates, or reframe for TikTok, Reels and Shorts — faces stay sharp, audio is
+       kept, uploads auto-delete. Free preview before you pay.</p>
+    <!-- Not a plain scroll anchor (the studio is right below): this also opens
+         the file picker, so the first click already starts the workflow. -->
+    <a class="btn" href="#tool" onclick="try{document.getElementById('file').click()}catch(e){}">Upload a video →</a>
+    <div class="trustline">
+      <span><b>Free</b> preview on every mode</span>
+      <span>No signup to try</span>
+      <span>Uploads auto-delete in ~6h</span>
+      <span>Faces stay sharp · audio kept</span>
+    </div>
+  </section>
+
+  <section id="tool" class="card">
+    <div id="acct" class="acctbar">
+      <span id="acctInfo" class="pill">Sign in &amp; get <b>2 free export credits</b> — no card needed.</span>
+      <span id="acctForm">
+        <input id="email" type="email" placeholder="you@email.com" class="emailin"/>
+        <button id="signin" class="tool">Email me a sign-in link</button>
+        <span id="codeWrap" style="display:none">
+          <input id="codeIn" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                 placeholder="6-digit code" class="emailin" style="width:110px" aria-label="6-digit sign-in code from the email"/>
+          <button id="codeGo" class="tool">Sign in with code</button>
+        </span>
+      </span>
+      <span id="acctUser" style="display:none">
+        <button id="buy" class="tool">💳 Buy credits</button>
+        <button id="signout" class="tool">Sign out</button>
+      </span>
+    </div>
+    <div id="signinNudge" class="nudge" style="display:none"></div>
+    <div id="buyPanel" class="buypanel" style="display:none"></div>
+    <p class="hint" style="margin:-6px 0 14px">Purchases are subject to our
+      <a href="terms.html" target="_blank" rel="noopener">Terms</a> &amp;
+      <a href="refunds.html" target="_blank" rel="noopener">Refund policy</a>.</p>
+    <div class="modes" id="modes">
+      <button class="tool mode active" data-task="remove">💧 Remove watermark</button>
+      <button class="tool mode" data-task="erase">🧹 Erase objects</button>
+      <button class="tool mode" data-task="enhance">✨ Enhance</button>
+      <button class="tool mode" data-task="reframe">📱 Reframe</button>
+      <button class="tool mode" data-task="blur">🕶 Privacy blur</button>
+      <button class="tool mode" data-task="captions">💬 Captions</button>
+      <button class="tool mode" data-task="reel">🎬 Make a Reel</button>
+    </div>
+    <div class="grid2">
+      <div>
+        <p class="step-tag">Step 1 · Upload</p>
+        <input id="file" type="file" accept="video/*"/>
+        <div class="row" style="margin-top:10px">
+          <button id="up" class="btn ghost">Upload</button>
+          <span id="meta" class="pill"></span>
+        </div>
+        <div id="upProg" style="display:none;height:6px;border-radius:6px;background:rgba(255,255,255,.12);margin-top:10px;overflow:hidden">
+          <div id="upBar" style="height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,#4a63d8,#8a5cf0);transition:width .15s ease"></div>
+        </div>
+        <label id="reelShrinkWrap" class="hint" style="display:none;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="reelShrink"/> Shrink to 1080p before upload — faster, keeps reel quality <em>(experimental)</em>
+        </label>
+        <p class="hint" id="uploadLimit">Up to 60s · max 200 MB per video in this tier.</p>
+        <p class="hint">Only upload videos you own or are <a href="terms.html" target="_blank" rel="noopener">licensed to edit</a> · uploads auto-delete within ~6 hours.</p>
+        <p class="hint warn" id="tooLong" style="display:none"></p>
+
+        <p class="step-tag" style="margin-top:18px" id="step2Tag">Step 2 · Highlight the watermark</p>
+        <p id="needUpload" class="hint">Upload a video and I'll show a frame with the watermark highlighted for you to mark.</p>
+        <div id="editorWrap" style="display:none">
+          <div class="editor" id="editor">
+            <canvas id="refCanvas" class="base"></canvas>
+            <canvas id="maskCanvas" class="mask"></canvas>
+          </div>
+          <div class="toolbar" id="toolbar">
+            <button class="tool active" id="tBrush">🖌 Brush</button>
+            <button class="tool" id="tBox">▭ Box</button>
+            <button class="tool" id="tErase">🧽 Eraser</button>
+            <label class="pill" style="display:flex;align-items:center;gap:6px">Size
+              <input id="brushSize" type="range" min="6" max="90" value="28"/></label>
+            <button class="tool" id="tAuto">✨ Auto-detect</button>
+            <button class="tool" id="tFaces" style="display:none">👁 Preview detection</button>
+            <button class="tool" id="tClear">Clear</button>
+          </div>
+          <p class="hint" id="editorHint">Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.</p>
+          <label class="chk" id="trackWrap" style="display:none"><input id="trackChk" type="checkbox"/> <span id="trackLbl">Moving object — track it across the video</span></label>
+        </div>
+        <div id="enhanceWrap" style="display:none">
+          <div class="optrow"><span class="pill">Scale</span>
+            <button class="tool sc active" data-scale="1">1× (same size)</button>
+            <button class="tool sc" data-scale="2">2× upscale</button>
+          </div>
+          <label class="chk" style="margin:6px 0"><input id="denoise" type="checkbox" checked/> Denoise &amp; deblock (cleans compression artifacts)</label>
+          <div class="optrow"><span class="pill">Sharpen</span>
+            <input id="sharpAmt" type="range" min="0" max="100" value="60"/>
+            <span class="pill" id="sharpVal">60%</span>
+          </div>
+          <p class="hint">Re-renders your clip through the enhancement chain: denoise → upscale → adaptive sharpen. Output resolution is capped to a server-safe size.</p>
+        </div>
+        <div id="reframeWrap" style="display:none">
+          <div class="optrow"><span class="pill">Aspect</span>
+            <button class="tool rt active" data-ratio="9:16">9:16 vertical</button>
+            <button class="tool rt" data-ratio="1:1">1:1 square</button>
+            <button class="tool rt" data-ratio="4:5">4:5 portrait</button>
+          </div>
+          <div class="optrow"><span class="pill">Fill</span>
+            <button class="tool ft active" data-fit="crop">🎯 Smart crop (follows the subject)</button>
+            <button class="tool ft" data-fit="blur">🌫 Fit + blurred bars</button>
+          </div>
+          <div class="optrow" id="focusRow">
+            <span class="pill" id="focusLbl">Focus: auto — tracks faces &amp; motion</span>
+            <button class="tool" id="fClear" style="display:none">✖ Clear focus</button>
+          </div>
+          <p class="hint">Smart crop keeps faces &amp; motion centered with a smooth virtual camera. Pick blurred bars when the whole frame must stay visible.</p>
+        </div>
+        <div id="blurWrap" style="display:none">
+          <label class="chk" style="margin:6px 0"><input id="bFaces" type="checkbox" checked/> Blur faces</label>
+          <label class="chk" style="margin:6px 0"><input id="bPlates" type="checkbox"/> Blur license plates (Beta)</label>
+          <div class="optrow"><span class="pill">Style</span>
+            <button class="tool bs active" data-style="blur">🌫 Blur</button>
+            <button class="tool bs" data-style="pixelate">🟪 Pixelate</button>
+          </div>
+          <div class="optrow"><span class="pill">Strength</span>
+            <input id="blurAmt" type="range" min="15" max="100" value="60"/>
+            <span class="pill" id="blurVal">60%</span>
+          </div>
+          <p class="hint">Faces / plates are found in every frame, then tracked &amp; smoothed so the blur holds steady. Audio is kept. Missed something? Brush it on the frame above — it's blurred too.</p>
+        </div>
+        <div id="reelWrap" style="display:none">
+         <div class="reelgrid">
+          <div class="reelcol">
+          <div class="rsteps">
+            <button class="rstep active" data-rs="1">1 · Shape &amp; trim</button>
+            <button class="rstep" data-rs="2">2 · Captions</button>
+            <button class="rstep" data-rs="3">3 · End card</button>
+          </div>
+          <div class="rpanel" id="rp1">
+            <div class="optrow"><span class="pill">Shape</span>
+              <button class="tool rlr active" data-ratio="9:16">9:16 Reels/TikTok</button>
+              <button class="tool rlr" data-ratio="1:1">1:1</button>
+              <button class="tool rlr" data-ratio="4:5">4:5</button>
+            </div>
+            <div class="optrow"><span class="pill">Fill</span>
+              <button class="tool rlf active" data-fit="crop">🎯 Smart crop</button>
+              <button class="tool rlf" data-fit="blur">🌫 Fit + blurred bars</button>
+            </div>
+            <div class="optrow"><span class="pill">Rotate</span>
+              <button class="tool rlrot active" data-rot="auto">Auto</button>
+              <button class="tool rlrot" data-rot="left">↺ Left</button>
+              <button class="tool rlrot" data-rot="right">↻ Right</button>
+              <button class="tool rlrot" data-rot="180">⤢ 180°</button>
+            </div>
+            <div id="rTrimBox" style="display:none">
+              <input id="rScrub" type="range" min="0" max="100" step="0.1" value="0" style="width:100%"/>
+              <div class="optrow">
+                <button class="tool" id="rSetIn">⇤ Start here</button>
+                <button class="tool" id="rSetOut">End here ⇥</button>
+                <span class="pill" id="rTrimLbl">Full clip</span>
+                <button class="tool" id="rTrimClr" style="display:none">✖ Reset</button>
+              </div>
+              <div class="optrow" style="margin-top:6px">
+                <button class="tool" id="rAddSeg" style="display:none">➕ Add this part</button>
+                <span class="pill" id="rSegTotal" style="display:none">0.0s</span>
+              </div>
+              <div id="rSegList"></div>
+            </div>
+            <p class="hint" id="rTrimHint">Scrub the phone preview, set a start and end, then <b>➕ Add this part</b> — repeat to stitch several parts from anywhere in your clip. Leave it empty to keep the whole clip. Tap the big frame to pin the crop.</p>
+            <div class="row" style="margin-top:8px"><button class="tool rnext" data-go="2">Next: captions →</button></div>
+          </div>
+          <div class="rpanel" id="rp2" style="display:none">
+            <div class="optrow"><span class="pill">Style</span>
+              <button class="tool rls active" data-capstyle="clean">Clean</button>
+              <button class="tool rls" data-capstyle="bold">Bold</button>
+              <button class="tool rls" data-capstyle="minimal">Minimal</button>
+              <button class="tool rls" data-capstyle="off">Off</button>
+            </div>
+            <div id="capOpts">
+              <div class="optrow"><span class="pill">Size</span>
+                <button class="tool rlz" data-capsize="s">S</button>
+                <button class="tool rlz active" data-capsize="m">M</button>
+                <button class="tool rlz" data-capsize="l">L</button>
+                <span class="pill" style="margin-left:10px">Position</span>
+                <button class="tool rlp active" data-cappos="bottom">Bottom</button>
+                <button class="tool rlp" data-cappos="middle">Middle</button>
+              </div>
+              <div class="optrow"><span class="pill">Color</span>
+                <button class="tool rlc active" data-capcolor="white"><i class="sw" style="background:#fff"></i>White</button>
+                <button class="tool rlc" data-capcolor="yellow"><i class="sw" style="background:#ffe14d"></i>Yellow</button>
+                <button class="tool rlc" data-capcolor="green"><i class="sw" style="background:#7fff8e"></i>Green</button>
+                <button class="tool rlc" data-capcolor="pink"><i class="sw" style="background:#ff69b4"></i>Pink</button>
+              </div>
+            </div>
+            <p class="hint">Watch the phone — your caption restyles live. Speech is transcribed
+              automatically (any language); music-only clips simply skip captions.
+              The <b>.srt</b> is always free.</p>
+            <div class="row" style="margin-top:8px"><button class="tool rnext" data-go="3">Next: end card →</button></div>
+          </div>
+          <div class="rpanel" id="rp3" style="display:none">
+            <div class="optrow">
+              <input id="reelCta" type="text" maxlength="80" placeholder="e.g. Shop now → yourbrand.com (leave empty for no card)" style="flex:1;min-width:0"/>
+            </div>
+            <div class="optrow"><span class="pill">Theme</span>
+              <button class="tool rlt active" data-theme="dark">Dark</button>
+              <button class="tool rlt" data-theme="light">Light</button>
+              <button class="tool rlt" data-theme="accent">Accent</button>
+              <span class="pill" style="margin-left:10px">Length</span>
+              <input id="rCardSecs" type="range" min="1" max="5" step="0.5" value="2.5" style="width:90px"/>
+              <span class="pill" id="rCardSecsLbl">2.5s</span>
+            </div>
+            <p class="hint">The card is appended after your reel — the "what to do next" every ad
+              needs. Leave the text empty to skip it.</p>
+          </div>
+          <p class="hint" style="margin-top:10px">One pass: trim → AI reframe → captions → end card.
+            Export uses <b>2 credits</b>; previews are free.</p>
+          </div>
+          <div class="phonecol">
+            <div class="phone">
+              <i class="pnotch"></i>
+              <div class="pscreen">
+                <div id="vwrap">
+                  <video id="rTrimV" muted playsinline loop></video>
+                  <div id="vempty">🎬<br/>your clip<br/>previews here</div>
+                  <span id="capMockTxt">Captions look like this</span>
+                  <div id="cardMock"><span id="cardMockTxt">Your call to action</span></div>
+                </div>
+                <div class="pui"><span>❤️</span><span>💬</span><span>↗️</span></div>
+                <div class="pmeta">@yourbrand · original audio</div>
+              </div>
+            </div>
+            <p class="hint" style="text-align:center;margin-top:8px" id="phoneHint">Live preview</p>
+          </div>
+         </div>
+        </div>
+        <div id="captionsWrap" style="display:none">
+          <p class="hint">Speech is transcribed by AI (language auto-detected) and burned in as
+            clean, readable captions — white text, dark outline, bottom-centred, sized to your
+            video. You also get the transcript as a free downloadable <b>.srt</b> file, even on
+            previews.</p>
+          <p class="hint">Works best on clips with clear speech. Music-only clips will come back
+            with "no speech detected" — previews are free, so it costs nothing to check.</p>
+        </div>
+
+        <label class="chk"><input id="cleanAudio" type="checkbox"/> <span>Clean audio — remove hiss, wind &amp; background noise (free)</span></label>
+        <label class="chk"><input id="owns" type="checkbox"/> <span>I own or have the
+          <a href="terms.html" target="_blank" rel="noopener">rights</a> to edit this video</span></label>
+        <div class="row">
+          <button id="prev" class="btn ghost" disabled>👁 Free preview</button>
+          <button id="exp" class="btn" disabled>⬇ Export full</button>
+        </div>
+        <span id="cred" class="pill"></span>
+        <div class="bar"><i id="prog"></i></div>
+        <p id="status" class="pill"></p>
+        <p class="hint" id="waitNote" style="display:none"></p>
+        <p class="hint" id="mailNote" style="display:none"></p>
+      </div>
+      <div>
+        <p class="step-tag">Step 3 · Result</p>
+        <div class="row" id="viewBar" style="display:none">
+          <button class="tool active" id="vResult">▶ Result</button>
+          <button class="tool" id="vCompare">⇆ Compare before / after</button>
+        </div>
+        <video id="out" controls playsinline></video>
+        <div class="cmp" id="cmpSlide" style="display:none">
+          <video id="cmpA" muted playsinline loop preload="auto"></video>
+          <video id="cmpB" class="beforeV" muted playsinline loop preload="auto"></video>
+          <div class="cmpDiv" id="cmpDiv"><i>⇆</i></div>
+          <span class="cmpTag l">Before</span><span class="cmpTag r">After</span>
+        </div>
+        <div class="cmpSbs" id="cmpSbs">
+          <figure><video id="sbsB" muted playsinline loop preload="auto"></video><figcaption>Before</figcaption></figure>
+          <figure><video id="sbsA" muted playsinline loop preload="auto"></video><figcaption>After</figcaption></figure>
+        </div>
+        <p class="hint" id="cmpHint" style="display:none">Drag the handle to sweep between the original and the result. Both loop muted &amp; in sync.</p>
+        <a id="dl" class="dl">⬇ Download cleaned video</a>
+        <a id="srtDl" class="dl" style="display:none" download="captions.srt">📝 Download subtitles (.srt) — free</a>
+        <div id="previewCta" class="nudge" style="display:none;margin-top:10px"></div>
+        <p id="retry" class="hint" style="display:none">Not fully clean? Adjust your highlight on the left and hit <b>Free preview</b> again — previews are free and unlimited.</p>
+      </div>
+    </div>
+  </section>
+
+  <h2 class="sec" id="demos">See it work</h2>
+  <p style="color:var(--mut);margin:0 0 14px">Real frames, real results — drag any slider to compare before and after.</p>
+  <div class="feat" id="demoGrid">
+    <div class="card"><h3>💧 Remove watermark</h3>
+      <div class="ba" aria-label="Before and after: watermark removed from a video frame">
+        <img src="/demos/ba/remove-after.jpg" alt="Frame after watermark removal" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/remove-before.jpg" alt="Frame before, with tiled watermark" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Auto-detected, neurally inpainted — <a href="/#tool=remove">try it →</a></p></div>
+    <div class="card"><h3>🖌 Erase objects</h3>
+      <div class="ba" aria-label="Before and after: one of two hot-air balloons erased from the sky">
+        <img src="/demos/ba/erase-after.jpg" alt="Frame after — the blue balloon is gone, clean sky remains" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/erase-before.jpg" alt="Frame before, two hot-air balloons in the sky" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Objects, captions, stickers — gone — <a href="/#tool=erase">try it →</a></p></div>
+    <div class="card"><h3>✨ Enhance</h3>
+      <div class="ba" aria-label="Before and after: compressed frame neurally restored">
+        <img src="/demos/ba/enhance-after.jpg" alt="Frame after neural enhancement" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/enhance-before.jpg" alt="Frame before, compressed and soft" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Neural restore + 2× upscale — <a href="/#tool=enhance">try it →</a></p></div>
+    <div class="card"><h3>📱 Reframe</h3>
+      <div class="ba" aria-label="Before and after: landscape clip reframed to a 9:16 vertical crop on the subject">
+        <img src="/demos/ba/reframe-after.jpg" alt="Clip reframed to a subject-centered 9:16 vertical crop" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/reframe-before.jpg" alt="Original landscape clip" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Landscape → 9:16, subject kept centered — <a href="/#tool=reframe">try it →</a></p></div>
+    <div class="card"><h3>🕶 Privacy blur</h3>
+      <div class="ba" aria-label="Before and after: faces in a street scene blurred for privacy">
+        <img src="/demos/ba/blur-after.jpg" alt="Street scene after all faces were blurred" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/blur-before.jpg" alt="Street scene before, faces visible" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Faces &amp; plates, tracked steady — <a href="/#tool=blur">try it →</a></p></div>
+    <div class="card"><h3>💬 Captions</h3>
+      <div class="ba" aria-label="Before and after: AI-transcribed captions burned into a talking-head clip">
+        <img src="/demos/ba/captions-after.jpg" alt="Frame after, spoken words burned in as styled captions" loading="lazy"/>
+        <img class="ba-b" src="/demos/ba/captions-before.jpg" alt="Frame before, no captions" loading="lazy"/>
+        <i class="ba-h"></i><s class="ba-t bl">Before</s><s class="ba-t br">After</s></div>
+      <p>Speech → styled captions + free .srt — <a href="/#tool=captions">try it →</a></p></div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+      <h3>Your clip next</h3>
+      <p style="margin-bottom:12px">Free preview on every mode — see your result before spending a credit.</p>
+      <a class="btn" href="#tool">Open the studio →</a></div>
+  </div>
+
+  <h2 class="sec" id="how">How it works</h2>
+  <div class="steps">
+    <div class="card"><b>Upload &amp; pick a mode</b><p style="color:var(--mut)">Remove a watermark, erase any object, enhance &amp; upscale, or reframe to a new shape.</p></div>
+    <div class="card"><b>Mark or tweak</b><p style="color:var(--mut)">Brush the region (remove/erase) or set your options (enhance/reframe). AI does the rest.</p></div>
+    <div class="card"><b>Preview &amp; export</b><p style="color:var(--mut)">See a free preview, then export the full video with audio intact.</p></div>
+  </div>
+
+  <h2 class="sec">Why CleanReel</h2>
+  <div class="feat">
+    <div class="card"><h3>Adaptive removal</h3><p>Auto-detects tiled watermarks, corner logos, even moving/animated marks.</p></div>
+    <div class="card"><h3>Object eraser</h3><p>Brush over a logo, timestamp, sign or bystander — gone in every frame.</p></div>
+    <div class="card"><h3>Enhance &amp; upscale</h3><p>Denoise, deblock and adaptive sharpening, with optional 2× upscale.</p></div>
+    <div class="card"><h3>Auto-reframe</h3><p>9:16, 1:1 or 4:5 with the subject kept centered — or blurred-bar fit.</p></div>
+    <div class="card"><h3>Privacy blur</h3><p>Auto-blur (or pixelate) faces and license plates across the clip — plus anything you brush.</p></div>
+    <div class="card"><h3>Keeps detail &amp; audio</h3><p>Faces and texture protected; your original sound is copied through.</p></div>
+    <div class="card"><h3>Free preview, low cost</h3><p>Check the result first; full exports use small credits.</p></div>
+  </div>
+
+  <h2 class="sec" id="faq">FAQ</h2>
+  <details><summary>How do I remove a watermark from a video?</summary><p>Upload a short video you own, mark the watermark (or let CleanReel auto-detect it), preview free, then export the cleaned video.</p></details>
+  <details><summary>Is it free?</summary><p>Previews are free. Full exports use low-cost credits that cover GPU processing — 1 credit per export, except Enhance which uses 2 (it runs every frame through a neural upscaler on a GPU).</p></details>
+  <details><summary>Will it blur my video or ruin faces?</summary><p>No — faces and detailed areas are protected and your audio is preserved, so the subject stays sharp.</p></details>
+  <details><summary>What can I legally remove?</summary><p>Only content you own or are licensed to edit — e.g. your own free-tier exports, your old logo, or stray text/timecode.</p></details>
+  <details><summary>What else can it do besides watermarks?</summary><p>Erase any unwanted object (brush it once — tracking follows it if it moves), enhance &amp; upscale soft or noisy clips, auto-reframe landscape video to 9:16, 1:1 or 4:5 with the subject kept in frame, and privacy-blur faces or license plates (auto-detected and tracked) plus any region you brush.</p></details>
+
+  <footer>
+    CleanReel is for content you own or are licensed to edit. Uploads are processed only for your request
+    and auto-deleted from our servers within about 6 hours.
+    <br/>© <span id="yr"></span> CleanReel · GREATER ADELAIDE SALES PTY LTD
+    <br/><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> ·
+    <a href="refunds.html">Refunds</a> · <a href="mailto:support@cleanreel.app">Contact</a> ·
+    <a href="mailto:abuse@cleanreel.app">Report abuse</a> · <a href="#faq">FAQ</a>
+    <br/>Tools: <a href="/remove-watermark-from-video">Remove watermark</a> ·
+    <a href="/remove-logo-from-video">Remove logo</a> ·
+    <a href="/remove-text-from-video">Remove text &amp; subtitles</a> ·
+    <a href="/remove-object-from-video">Erase objects</a> ·
+    <a href="/blur-face-in-video">Blur faces &amp; plates</a> ·
+    <a href="/video-enhancer">Video enhancer</a>
+  </footer>
+</div>
+
+<!-- API endpoint: edit config.js with your backend URL (Render/Railway/Fly) -->
+<script src="config.js"></script>
+<script>
+const API = (window.API_BASE || "");
+const $ = id => document.getElementById(id);
+$("yr").textContent = new Date().getFullYear();
+let fileId=null, vw=0, vh=0;
+
+/* ---------- modes (tasks) ---------- */
+let task='remove';                 // remove | erase | enhance | reframe | blur
+let enhScale=1, ratioSel='9:16', fitSel='crop', blurStyle='blur';
+const TASK_COPY={
+  remove:{tag:'Step 2 · Highlight the watermark',
+    need:'Upload a video and I\'ll show a frame with the watermark highlighted for you to mark.',
+    hint:'Paint over the glowing (yellow) watermark — or hit <b>Auto-detect</b> to start, then tidy the edges. Only what you highlight is touched; the rest of the video is untouched.'},
+  erase:{tag:'Step 2 · Mark what to erase',
+    need:'Upload a video and I\'ll show a sharp frame to brush on.',
+    hint:'Brush over anything you want gone — a logo, timestamp, sign or bystander. If it moves, it\'s detected and tracked automatically (tick <b>Moving object</b> below to force tracking). Fast, spinning or tilting objects are genuinely hard: mark generously and expect some frames to keep a trace.'},
+  enhance:{tag:'Step 2 · Enhancement options',
+    need:'Upload a video to enhance — options are below.'},
+  reframe:{tag:'Step 2 · Pick the new shape',
+    need:'Upload a video to reframe — pick the aspect below, then (optionally) tap the frame to pin the crop.',
+    hint:'Optional: <b>tap the frame</b> to pin the crop centre — a crosshair marks it and the camera stays locked there. No pin = smart auto-tracking (faces &amp; motion). <b>✖ Clear focus</b> returns to auto.'},
+  blur:{tag:'Step 2 · Choose what to blur',
+    need:'Upload a video — faces are blurred automatically; you can brush extra areas too.',
+    hint:'Faces (and plates, if ticked) are found and blurred in every frame — hit <b>👁 Preview detection</b> to see what\'s caught. Brush anything else (a name tag, a screen, an address) and it\'s blurred too. If a brushed region moves, tick <b>Moving region</b> below.'},
+  captions:{tag:'Step 2 · Caption options',
+    need:'Upload a video with speech — captions are generated automatically.'},
+  reel:{tag:'Step 2 · Reel options',
+    need:'Upload any footage — old, landscape, watermark-free — and get an ad-ready vertical reel: reframed, captioned, with your call-to-action at the end.',
+    hint:'Optional: <b>tap the frame</b> to pin the crop centre — otherwise smart tracking follows faces &amp; motion, exactly like Reframe.'}
+};
+let savedMask=null;                  // remove/erase paint, parked while in reframe
+function setTask(t){
+  const was=task; task=t;
+  document.querySelectorAll('#modes .mode').forEach(b=>b.classList.toggle('active',b.dataset.task===t));
+  const ed=(t==='remove'||t==='erase'||t==='blur');// mask-editor modes
+  const canv=ed||t==='reframe'||t==='reel';        // modes that show the canvas
+  $("step2Tag").textContent=TASK_COPY[t].tag;
+  $("needUpload").innerHTML=TASK_COPY[t].need;
+  $("needUpload").style.display=(canv&&!fileId)?'block':'none';
+  $("editorWrap").style.display=(canv&&fileId)?'block':'none';
+  $("enhanceWrap").style.display=(t==='enhance')?'block':'none';
+  $("reframeWrap").style.display=(t==='reframe')?'block':'none';
+  $("blurWrap").style.display=(t==='blur')?'block':'none';
+  $("captionsWrap").style.display=(t==='captions')?'block':'none';
+  $("reelWrap").style.display=(t==='reel')?'block':'none';
+  { const rs=$("reelShrinkWrap"); if(rs) rs.style.display=(t==='reel')?'flex':'none'; }
+  if(t==='reel'){ try{ rTrimSetup(); }catch(e){} }
+  updateUploadLimit();
+  $("toolbar").style.display=ed?'':'none';
+  $("tAuto").style.display=(t==='remove')?'':'none';
+  $("tFaces").style.display=(t==='blur')?'':'none';
+  $("trackWrap").style.display=(t==='erase'||t==='blur')?'flex':'none';
+  $("trackLbl").textContent=(t==='blur')
+    ?'Moving region — track my brushed area across the video'
+    :'Moving object — track it across the video';
+  const pin=(t==='reframe'||t==='reel'), wasPin=(was==='reframe'||was==='reel');
+  maskC.style.opacity=pin?'0.9':'0.5';             // focus pin should read clearly
+  if(canv){ $("editorHint").innerHTML=TASK_COPY[t].hint; if(fileId) loadBase(); }
+  if(!wasPin&&pin){                                // park the paint, show the pin
+    if(maskC.width&&maskC.height) savedMask=mctx.getImageData(0,0,maskC.width,maskC.height);
+    drawFocus();
+  } else if(wasPin&&!pin){                         // restore the parked paint
+    mctx.clearRect(0,0,maskC.width,maskC.height);
+    if(savedMask){ try{ mctx.putImageData(savedMask,0,0); }catch(e){} savedMask=null; }
+  }
+}
+document.querySelectorAll('#modes .mode').forEach(b=>b.onclick=()=>setTask(b.dataset.task));
+document.querySelectorAll('#enhanceWrap .sc').forEach(b=>b.onclick=()=>{
+  enhScale=+b.dataset.scale;
+  document.querySelectorAll('#enhanceWrap .sc').forEach(x=>x.classList.toggle('active',x===b)); });
+document.querySelectorAll('#reframeWrap .rt').forEach(b=>b.onclick=()=>{
+  ratioSel=b.dataset.ratio;
+  document.querySelectorAll('#reframeWrap .rt').forEach(x=>x.classList.toggle('active',x===b)); });
+document.querySelectorAll('#reframeWrap .ft').forEach(b=>b.onclick=()=>{
+  fitSel=b.dataset.fit;
+  document.querySelectorAll('#reframeWrap .ft').forEach(x=>x.classList.toggle('active',x===b)); });
+$("sharpAmt").oninput=()=>$("sharpVal").textContent=$("sharpAmt").value+'%';
+document.querySelectorAll('#blurWrap .bs').forEach(b=>b.onclick=()=>{
+  blurStyle=b.dataset.style;
+  document.querySelectorAll('#blurWrap .bs').forEach(x=>x.classList.toggle('active',x===b)); });
+$("blurAmt").oninput=()=>$("blurVal").textContent=$("blurAmt").value+'%';
+/* ---------- Make-a-Reel wizard ---------- */
+let reelRatio='9:16', reelFit='crop', reelCapStyle='clean', reelCapSize='m',
+    reelCapPos='bottom', reelCapColor='white', reelTheme='dark',
+    reelStart=0, reelEnd=0, reelSegs=[], reelRotate='auto';
+function rchips(sel, key, fn){ document.querySelectorAll(sel).forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(sel).forEach(x=>x.classList.toggle('active',x===b));
+  fn(b.dataset[key]); }); }
+rchips('#reelWrap .rlr','ratio', v=>{ reelRatio=v;
+  const vw=$("vwrap"); vw.classList.toggle('r11',v==='1:1'); vw.classList.toggle('r45',v==='4:5'); });
+rchips('#reelWrap .rlf','fit',   v=>reelFit=v);
+rchips('#reelWrap .rlrot','rot', v=>{ reelRotate=v; rApplyRotPreview(); });
+function rApplyRotPreview(){ const v=$("rTrimV"); if(!v) return;
+  const deg={auto:0,left:-90,right:90,'180':180}[reelRotate]||0;
+  v.style.transformOrigin='center center';
+  v.style.transform=deg?`rotate(${deg}deg)`:''; }
+rchips('#reelWrap .rls','capstyle', v=>{ reelCapStyle=v;
+  $("capOpts").style.display=(v==='off')?'none':'block';
+  $("capMockTxt").style.display=(v==='off')?'none':'block'; capMockDraw(); });
+rchips('#reelWrap .rlz','capsize',  v=>{ reelCapSize=v; capMockDraw(); });
+rchips('#reelWrap .rlp','cappos',   v=>{ reelCapPos=v; capMockDraw(); });
+rchips('#reelWrap .rlc','capcolor', v=>{ reelCapColor=v; capMockDraw(); });
+rchips('#reelWrap .rlt','theme',    v=>{ reelTheme=v; cardMockDraw(); });
+function rShow(n){
+  document.querySelectorAll('#reelWrap .rpanel').forEach((p,i)=>p.style.display=(i===n-1)?'block':'none');
+  document.querySelectorAll('#reelWrap .rstep').forEach((s,i)=>{
+    s.classList.toggle('active', i===n-1); s.classList.toggle('donestep', i<n-1); });
+  $("cardMock").classList.toggle('show', n===3);
+  $("capMockTxt").style.display=(n===3||reelCapStyle==='off')?'none':'block';
+  $("phoneHint").textContent=['Scrub to trim','Caption preview — live','End-card preview — live'][n-1];
+}
+document.querySelectorAll('#reelWrap .rstep').forEach(s=>s.onclick=()=>rShow(+s.dataset.rs));
+document.querySelectorAll('#reelWrap .rnext').forEach(b=>b.onclick=()=>rShow(+b.dataset.go));
+/* live caption mock */
+const CAP_HEX={white:'#fff',yellow:'#ffe14d',green:'#7fff8e',pink:'#ff69b4'};
+function capMockDraw(){
+  const t=$("capMockTxt"); if(!t) return;
+  const sz={s:9,m:12,l:15}[reelCapSize]||12;
+  const base={clean:1,bold:1.25,minimal:.85}[reelCapStyle]||1;
+  t.style.fontSize=Math.round(sz*base)+'px';
+  t.style.color=CAP_HEX[reelCapColor]||'#fff';
+  t.style.fontWeight=(reelCapStyle==='minimal')?'500':'800';
+  t.style.background=(reelCapStyle==='bold')?'rgba(0,0,0,.82)':'transparent';
+  t.style.padding=(reelCapStyle==='bold')?'3px 10px':'0';
+  t.style.textShadow=(reelCapStyle==='bold')?'none':'0 2px 4px #000,0 0 6px #000';
+  if(reelCapPos==='middle'){ t.style.bottom='auto'; t.style.top='50%'; t.style.transform='translateY(-50%)'; }
+  else { t.style.bottom='12px'; t.style.top='auto'; t.style.transform='none'; }
+}
+/* live end-card mock */
+const CARD_BG={dark:'linear-gradient(135deg,#0b0e1a,#2a1f5e)',
+  light:'linear-gradient(135deg,#f3f4fa,#d7dbf2)',
+  accent:'linear-gradient(135deg,#4a63d8,#8a5cf0)'};
+function cardMockDraw(){
+  const m=$("cardMock"); m.style.background=CARD_BG[reelTheme];
+  m.style.color=(reelTheme==='light')?'#14172b':'#fff';
+  $("cardMockTxt").textContent=$("reelCta").value.trim()||'Your call to action';
+}
+$("reelCta").oninput=cardMockDraw;
+$("rCardSecs").oninput=()=>$("rCardSecsLbl").textContent=$("rCardSecs").value+'s';
+/* trim scrubber on the user's own clip (all client-side) */
+function rTrimSetup(){
+  const f=$("file").files[0], box=$("rTrimBox"), vw=$("vwrap");
+  if(!f){ box.style.display='none'; vw.classList.remove('hasvid'); return; }
+  box.style.display='block'; vw.classList.add('hasvid');
+  const v=$("rTrimV");
+  if(v.dataset.for!==f.name+f.size){
+    v.src=URL.createObjectURL(f); v.dataset.for=f.name+f.size;
+    reelStart=0; reelEnd=0; reelSegs=[]; rTrimLblDraw();
+    v.onloadedmetadata=()=>{ $("rScrub").max=v.duration.toFixed(1);
+      v.play().catch(()=>{}); };            // silent looping preview in the phone
+  } else { v.play().catch(()=>{}); }
+}
+$("rScrub").oninput=()=>{ const v=$("rTrimV");
+  if(v.duration){ v.pause(); v.currentTime=+$("rScrub").value; } };
+$("rScrub").onchange=()=>{ $("rTrimV").play().catch(()=>{}); };
+function rTrimLblDraw(){
+  const has=reelStart>0||reelEnd>0;
+  $("rTrimLbl").textContent=has?`${reelStart.toFixed(1)}s → ${reelEnd>0?reelEnd.toFixed(1)+'s':'end'}`:'Full clip';
+  $("rTrimClr").style.display=has?'':'none';
+  rSegDraw();
+}
+function rSegDur(){ return reelSegs.reduce((a,g)=>a+(g[1]-g[0]),0)
+  +((reelEnd>reelStart)?(reelEnd-reelStart):0); }
+function rSegDraw(){
+  const pend=(reelEnd>reelStart);
+  $("rAddSeg").style.display=pend?'':'none';
+  const list=$("rSegList"); list.innerHTML='';
+  reelSegs.forEach((g,i)=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;padding:4px 9px;margin:4px 0;background:rgba(255,255,255,.05);border-radius:8px';
+    row.innerHTML=`<span>Part ${i+1}: ${g[0].toFixed(1)}s → ${g[1].toFixed(1)}s</span>`;
+    const x=document.createElement('button'); x.className='tool'; x.textContent='✖';
+    x.style.padding='2px 8px'; x.onclick=()=>{ reelSegs.splice(i,1); rTrimLblDraw(); };
+    row.appendChild(x); list.appendChild(row);
+  });
+  const tot=rSegDur(), over=tot>MAXREELOUT+0.5, any=(reelSegs.length>0||pend);
+  const el=$("rSegTotal"); el.style.display=any?'':'none';
+  el.textContent=`${tot.toFixed(1)}s / ${MAXREELOUT}s${reelSegs.length?` · ${reelSegs.length} part${reelSegs.length>1?'s':''}`:''}`;
+  el.style.color=over?'#ff8080':'';
+}
+$("rSetIn").onclick=()=>{ reelStart=+$("rTrimV").currentTime||0;
+  if(reelEnd&&reelEnd<=reelStart) reelEnd=0; rTrimLblDraw(); };
+$("rSetOut").onclick=()=>{ const t=+$("rTrimV").currentTime||0;
+  if(t>reelStart+0.5){ reelEnd=t; rTrimLblDraw(); } };
+$("rTrimClr").onclick=()=>{ reelStart=0; reelEnd=0; rTrimLblDraw(); };
+$("rAddSeg").onclick=()=>{ if(reelEnd>reelStart){ reelSegs.push([+reelStart.toFixed(2),+reelEnd.toFixed(2)]);
+  reelStart=0; reelEnd=0; rTrimLblDraw(); } };
+capMockDraw(); cardMockDraw();
+
+/* ---------- accounts (magic-link) ---------- */
+let auth = JSON.parse(localStorage.getItem('cr_auth')||'null');   // {session,email,credits}
+function authHeaders(){ return auth&&auth.session ? {'Authorization':'Bearer '+auth.session} : {}; }
+function saveAuth(a){ auth=a; a?localStorage.setItem('cr_auth',JSON.stringify(a)):localStorage.removeItem('cr_auth');
+  try{ if(PH_KEY&&window.posthog&&posthog.identify){ if(a&&a.email) posthog.identify(a.email,{email:a.email}); else posthog.reset(); } }catch(e){}
+  renderAcct(); }
+function renderAcct(){
+  const inU = !!(auth&&auth.session);
+  $("acctForm").style.display=inU?'none':'inline';
+  $("acctUser").style.display=inU?'inline':'none';
+  if(inU){ $("acctInfo").innerHTML=`Signed in as <b>${auth.email}</b> · <b>${auth.credits??'…'}</b> export credit(s) · <a href="/account.html">My work</a>`; $("signinNudge").style.display='none'; }
+  else { $("acctInfo").innerHTML='Sign in &amp; get <b>2 free export credits</b> — no card needed.'; $("buyPanel").style.display='none'; }
+}
+async function refreshMe(){
+  if(!auth){ renderAcct(); return; }
+  try{ const r=await fetch(API+'/api/me',{headers:authHeaders()});
+    if(r.ok){ const d=await r.json(); auth.email=d.email; auth.credits=d.credits; saveAuth(auth); }
+    else if(r.status===401){ saveAuth(null); } else renderAcct();
+  }catch(e){ renderAcct(); }
+}
+$("signin").onclick=async()=>{
+  const email=$("email").value.trim(); if(!email){alert('Enter your email.');return;}
+  $("signin").textContent='Sending…';
+  try{ const r=await fetch(API+'/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const d=await r.json();
+    if(!r.ok) $("acctInfo").textContent='Error: '+(d.detail||'failed');
+    else if(d.dev_link) $("acctInfo").innerHTML='Email isn\'t set up yet — <a href="'+d.dev_link+'">click here to sign in</a>.';
+    else{ $("acctInfo").textContent='✅ Email sent — tap the link, or type the 6-digit code here:';
+      $("codeWrap").style.display='inline'; $("codeIn").focus(); }
+  }catch(e){ $("acctInfo").textContent='Network error.'; }
+  $("signin").textContent='Email me a sign-in link';
+};
+$("codeGo").onclick=async()=>{
+  const email=$("email").value.trim(), code=$("codeIn").value.trim();
+  if(!email||code.length!==6){alert('Enter your email and the 6-digit code from it.');return;}
+  $("codeGo").textContent='Checking…';
+  try{ const r=await fetch(API+'/api/auth/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code})});
+    const d=await r.json();
+    if(r.ok){ saveAuth({session:d.session,email:d.email,credits:d.credits});
+      $("codeWrap").style.display='none'; track('signin_code',{}); }
+    else $("acctInfo").textContent='⚠ '+(d.detail||'Invalid code.');
+  }catch(e){ $("acctInfo").textContent='Network error.'; }
+  $("codeGo").textContent='Sign in with code';
+};
+$("codeIn").addEventListener('keydown',e=>{ if(e.key==='Enter') $("codeGo").click(); });
+$("signout").onclick=()=>saveAuth(null);
+$("buy").onclick=async()=>{
+  const bp=$("buyPanel");
+  if(bp.style.display==='flex'){ bp.style.display='none'; return; }
+  bp.innerHTML='';
+  try{ const d=await(await fetch(API+'/api/packs')).json();
+    if(!d.configured) bp.innerHTML='<span class="pill">Payments are being set up — check back soon.</span>';
+    for(const [id,p] of Object.entries(d.packs||{})){
+      const b=document.createElement('button'); b.className='pack';
+      b.innerHTML=`<b>${p.label}</b><span>$${(p.amount/100).toFixed(2)}</span>`;
+      b.onclick=()=>checkout(id); bp.appendChild(b);
+    }
+  }catch(e){ bp.innerHTML='<span class="pill">Could not load packs.</span>'; }
+  bp.style.display='flex';
+};
+async function checkout(pack){
+  track('checkout_started',{pack});
+  try{ const r=await fetch(API+'/api/checkout',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({pack})});
+    const d=await r.json();
+    if(r.ok&&d.url) location.href=d.url; else alert(d.detail||'Could not start checkout.');
+  }catch(e){ alert('Network error.'); }
+}
+async function handleHash(){
+  const h=location.hash;
+  if(h.startsWith('#login=')){
+    const token=h.slice(7); history.replaceState(null,'','#tool');
+    try{ const r=await fetch(API+'/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+      const d=await r.json();
+      if(r.ok) saveAuth({session:d.session,email:d.email,credits:d.credits});
+      else $("acctInfo").textContent='That sign-in link is invalid or expired — request a new one.';
+    }catch(e){}
+  } else if(h==='#paid'){ history.replaceState(null,'','#tool'); await refreshMe(); $("acctInfo").innerHTML+=' <b>— thanks, credits added!</b>'; }
+  else if(h.startsWith('#tool=')){                 // deep link from SEO pages: /#tool=remove
+    const t=h.slice(6);
+    if(['remove','erase','enhance','reframe','blur','captions','reel'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
+    history.replaceState(null,'','#tool');
+    try{ document.getElementById('tool').scrollIntoView(); }catch(e){}
+  }
+}
+handleHash(); refreshMe();
+window.addEventListener("hashchange", handleHash);   // same-page deep links (demo cards' "try it")
+
+/* before/after sliders: gentle auto-sweep until touched, then draggable */
+(()=>{
+  const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.ba').forEach((el,i)=>{
+    let auto=!still;
+    const t0=performance.now()+i*700;                 // stagger so the grid ripples
+    const set=v=>el.style.setProperty('--p',Math.max(3,Math.min(97,v))+'%');
+    if(auto) requestAnimationFrame(function loop(t){
+      if(!auto) return;
+      set(50+40*Math.sin((t-t0)/2600));               // slow sine sweep
+      requestAnimationFrame(loop);
+    });
+    const drag=e=>{const r=el.getBoundingClientRect(); set(100*(e.clientX-r.left)/r.width);};
+    el.addEventListener('pointerdown',e=>{auto=false; el.setPointerCapture(e.pointerId); drag(e);});
+    el.addEventListener('pointermove',e=>{if(e.buttons) drag(e);});
+  });
+})();
+
+/* ---------- canvas editor ---------- */
+const refC=$("refCanvas"), maskC=$("maskCanvas");
+const rctx=refC.getContext("2d"), mctx=maskC.getContext("2d");
+const MASK_RGB=[255,42,90], MASK_COLOR="rgb(255,42,90)";
+let tool="brush", drawing=false, last=null, boxStart=null, boxSnap=null;
+
+function setTool(t){ tool=t;
+  [["tBrush","brush"],["tBox","box"],["tErase","erase"]].forEach(([id,n])=>$(id).classList.toggle("active",n===t)); }
+$("tBrush").onclick=()=>setTool("brush");
+$("tBox").onclick=()=>setTool("box");
+$("tErase").onclick=()=>setTool("erase");
+$("tClear").onclick=()=>mctx.clearRect(0,0,maskC.width,maskC.height);
+
+function scale(){ const r=maskC.getBoundingClientRect(); return maskC.width/(r.width||1); }
+function pos(e){ const r=maskC.getBoundingClientRect(); const s=maskC.width/(r.width||1);
+  return {x:(e.clientX-r.left)*s, y:(e.clientY-r.top)*(maskC.height/(r.height||1))}; }
+function rad(){ return (+$("brushSize").value)*scale(); }
+function stroke(a,b){ mctx.globalCompositeOperation=(tool==="erase")?"destination-out":"source-over";
+  mctx.strokeStyle=MASK_COLOR; mctx.fillStyle=MASK_COLOR; mctx.lineCap="round"; mctx.lineWidth=rad()*2;
+  mctx.beginPath(); mctx.moveTo(a.x,a.y); mctx.lineTo(b.x,b.y); mctx.stroke();
+  mctx.beginPath(); mctx.arc(b.x,b.y,rad(),0,7); mctx.fill(); }
+
+maskC.addEventListener("pointerdown",e=>{ if(!fileId)return; e.preventDefault();
+  const p=pos(e);
+  if(task==='reframe'||task==='reel'){  // tap = pin the crop focus point
+    setFocus({x:Math.min(1,Math.max(0,p.x/(maskC.width||1))),
+              y:Math.min(1,Math.max(0,p.y/(maskC.height||1)))});
+    return;
+  }
+  maskC.setPointerCapture(e.pointerId); drawing=true;
+  if(tool==="box"){ boxStart=p; boxSnap=mctx.getImageData(0,0,maskC.width,maskC.height); }
+  else { last=p; stroke(p,p); } });
+maskC.addEventListener("pointermove",e=>{ if(!drawing)return; const p=pos(e);
+  if(tool==="box"){ mctx.putImageData(boxSnap,0,0); mctx.globalCompositeOperation="source-over";
+    mctx.fillStyle=MASK_COLOR; mctx.fillRect(Math.min(boxStart.x,p.x),Math.min(boxStart.y,p.y),
+      Math.abs(p.x-boxStart.x),Math.abs(p.y-boxStart.y)); }
+  else { stroke(last,p); last=p; } });
+function endDraw(){ drawing=false; last=boxStart=boxSnap=null; }
+maskC.addEventListener("pointerup",endDraw);
+maskC.addEventListener("pointercancel",endDraw);
+
+/* ---------- reframe focus pin (tap the frame to lock the crop center) ---------- */
+let focusPt=null;                       // {x,y} normalized 0..1, null = auto-track
+function drawFocus(){
+  mctx.clearRect(0,0,maskC.width,maskC.height);
+  if(!focusPt) return;
+  const x=focusPt.x*maskC.width, y=focusPt.y*maskC.height,
+        r=Math.max(10,maskC.width*0.03);
+  mctx.globalCompositeOperation="source-over";
+  mctx.strokeStyle="#8fa6ff"; mctx.lineWidth=Math.max(2.5,r*0.22); mctx.lineCap="round";
+  mctx.beginPath(); mctx.arc(x,y,r,0,7); mctx.stroke();
+  mctx.beginPath();
+  mctx.moveTo(x-r*1.8,y); mctx.lineTo(x-r*0.6,y); mctx.moveTo(x+r*0.6,y); mctx.lineTo(x+r*1.8,y);
+  mctx.moveTo(x,y-r*1.8); mctx.lineTo(x,y-r*0.6); mctx.moveTo(x,y+r*0.6); mctx.lineTo(x,y+r*1.8);
+  mctx.stroke();
+}
+function setFocus(p){
+  focusPt=p; if(task==='reframe'||task==='reel') drawFocus();
+  $("fClear").style.display=p?'':'none';
+  $("focusLbl").textContent=p
+    ? `Focus: pinned at ${Math.round(p.x*100)}%, ${Math.round(p.y*100)}% — the crop stays locked there`
+    : 'Focus: auto — tracks faces & motion';
+}
+$("fClear").onclick=()=>setFocus(null);
+
+function maskEmpty(){ const d=mctx.getImageData(0,0,maskC.width,maskC.height).data;
+  for(let i=3;i<d.length;i+=4) if(d[i]>10) return false; return true; }
+function maskPNG(){ const t=document.createElement("canvas"); t.width=maskC.width; t.height=maskC.height;
+  const tx=t.getContext("2d"), src=mctx.getImageData(0,0,maskC.width,maskC.height).data;
+  const out=tx.createImageData(maskC.width,maskC.height), o=out.data;
+  for(let i=0;i<src.length;i+=4){ const on=src[i+3]>10?255:0; o[i]=o[i+1]=o[i+2]=on; o[i+3]=255; }
+  tx.putImageData(out,0,0); return t.toDataURL("image/png"); }
+
+/* remove mode shows the highlighted reference; erase mode shows the sharp frame */
+let baseCache={};
+async function loadBase(){
+  const kind=(task==='remove')?'reference':'frame', key=fileId+':'+kind;
+  try{
+    if(!baseCache[key]){ const r=await fetch(API+`/api/${kind}/${fileId}`);
+      if(!r.ok) return; baseCache[key]=URL.createObjectURL(await r.blob()); }
+    await new Promise(res=>{ const img=new Image();
+      img.onload=()=>{ rctx.drawImage(img,0,0,refC.width,refC.height); res(); };
+      img.onerror=res; img.src=baseCache[key]; });
+  }catch(e){}
+}
+/* blur mode: outline what the face/plate detectors catch on the canvas still */
+$("tFaces").onclick=async()=>{
+  if(!fileId)return; const btn=$("tFaces"); btn.textContent="Detecting…";
+  const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');
+  try{
+    const r=await fetch(API+`/api/detect_regions/${fileId}?targets=`+
+      encodeURIComponent((tg.length?tg:['face']).join(',')),{method:'POST'});
+    const d=await r.json();
+    await loadBase();                          // clean still, then draw the boxes
+    const bx=(r.ok&&d.boxes)||[];
+    rctx.strokeStyle='#36d39b'; rctx.lineWidth=Math.max(2,refC.width*0.004);
+    bx.forEach(([x,y,w,h])=>rctx.strokeRect(x,y,w,h));
+    btn.textContent=bx.length?`👁 Found ${bx.length} on this frame`:'👁 None here — brush it instead';
+    setTimeout(()=>{ btn.textContent='👁 Preview detection'; },3500);
+  }catch(e){ btn.textContent='👁 Preview detection'; }
+};
+$("tAuto").onclick=async()=>{
+  if(!fileId)return; const btn=$("tAuto"); btn.textContent="Detecting…";
+  try{
+    const r=await fetch(API+`/api/autodetect/${fileId}`,{method:"POST"}); const b=await r.blob();
+    const img=new Image(); img.onload=()=>{
+      const tmp=document.createElement("canvas"); tmp.width=maskC.width; tmp.height=maskC.height;
+      const tc=tmp.getContext("2d"); tc.drawImage(img,0,0,maskC.width,maskC.height);
+      const d=tc.getImageData(0,0,maskC.width,maskC.height).data;
+      const out=mctx.createImageData(maskC.width,maskC.height), o=out.data;
+      for(let i=0;i<d.length;i+=4){ if(d[i]>127){ o[i]=MASK_RGB[0];o[i+1]=MASK_RGB[1];o[i+2]=MASK_RGB[2];o[i+3]=255; } }
+      mctx.globalCompositeOperation="source-over"; mctx.putImageData(out,0,0);
+      btn.textContent="✨ Auto-detect";
+    }; img.src=URL.createObjectURL(b);
+  }catch(e){ btn.textContent="✨ Auto-detect"; }
+};
+
+/* ---------- upload (robust to a cold / sleeping server) ---------- */
+function ping(ms){                       // resolves true if the API answers in time
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms);
+  return fetch(API+"/api/health",{cache:"no-store",signal:c.signal})
+    .then(r=>r.ok).catch(()=>false).finally(()=>clearTimeout(t));
+}
+/* XHR upload so we get a real upload-progress bar (fetch can't report it). */
+function xhrUpload(url, fd, onprog){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    if(xhr.upload) xhr.upload.onprogress=e=>{ if(e.lengthComputable) onprog(e.loaded, e.total); };
+    xhr.onload=()=>{ let data={}; try{ data=JSON.parse(xhr.responseText); }catch(e){}
+      resolve({ok: xhr.status>=200 && xhr.status<300, status: xhr.status, data}); };
+    xhr.onerror=()=>reject(new Error("network"));
+    xhr.onabort=()=>reject(new Error("abort"));
+    xhr.send(fd);
+  });
+}
+/* EXPERIMENTAL, opt-in: shrink a large reel source to ~1080p in the browser
+   before uploading. Realtime (MediaRecorder), so gated to short clips. NEVER
+   throws — any problem/timeout returns the ORIGINAL file unchanged, so it can't
+   break an upload. Verify on a real device before enabling by default. */
+async function maybeDownscale(file, targetLong){
+  try{
+    if(!('MediaRecorder' in window) || !HTMLCanvasElement.prototype.captureStream
+       || !(window.AudioContext||window.webkitAudioContext)) return file;
+    const v=document.createElement('video'); v.playsInline=true; v.preload='auto';
+    v.src=URL.createObjectURL(file);
+    await new Promise((res,rej)=>{ v.onloadedmetadata=res; v.onerror=rej; setTimeout(rej,8000); });
+    const W=v.videoWidth, H=v.videoHeight, dur=v.duration||0, long=Math.max(W,H);
+    if(!W||!H||!dur||long<=targetLong*1.05||dur>180){ URL.revokeObjectURL(v.src); return file; }
+    const s=targetLong/long, ow=Math.round(W*s/2)*2, oh=Math.round(H*s/2)*2;
+    const cv=document.createElement('canvas'); cv.width=ow; cv.height=oh;
+    const cx=cv.getContext('2d');
+    const AC=window.AudioContext||window.webkitAudioContext, ac=new AC();
+    let audio=[];
+    try{ const sn=ac.createMediaElementSource(v), dn=ac.createMediaStreamDestination();
+      sn.connect(dn); audio=dn.stream.getAudioTracks(); }catch(e){}
+    const vs=cv.captureStream(30);
+    const stream=new MediaStream([...vs.getVideoTracks(), ...audio]);
+    const mime=MediaRecorder.isTypeSupported('video/mp4;codecs=h264,aac')?'video/mp4;codecs=h264,aac'
+      :MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')?'video/webm;codecs=vp9,opus'
+      :MediaRecorder.isTypeSupported('video/webm')?'video/webm':'';
+    if(!mime){ URL.revokeObjectURL(v.src); try{ac.close();}catch(e){} return file; }
+    const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8000000});
+    const chunks=[]; rec.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    const stopped=new Promise(r=>{ rec.onstop=r; });
+    let raf=0; const loop=()=>{ try{ cx.drawImage(v,0,0,ow,oh); }catch(e){} raf=requestAnimationFrame(loop); };
+    rec.start(1000);
+    try{ await v.play(); }catch(e){ cancelAnimationFrame(raf); try{rec.stop();}catch(_){}
+      URL.revokeObjectURL(v.src); try{ac.close();}catch(_){}; return file; }
+    loop();
+    await Promise.race([ new Promise(r=>{ v.onended=r; }),
+                         new Promise(r=>setTimeout(r, dur*1000+15000)) ]);
+    cancelAnimationFrame(raf); try{ rec.stop(); }catch(e){} await stopped;
+    URL.revokeObjectURL(v.src); try{ac.close();}catch(e){}
+    const type=mime.split(';')[0], blob=new Blob(chunks,{type});
+    if(!blob.size || blob.size>=file.size*0.95) return file;
+    const good=await new Promise(res=>{ const t=document.createElement('video');
+      t.onloadedmetadata=()=>{ const ok=Math.abs((t.duration||0)-dur)<Math.max(2,dur*0.25);
+        URL.revokeObjectURL(t.src); res(ok); };
+      t.onerror=()=>res(false); t.src=URL.createObjectURL(blob); setTimeout(()=>res(false),8000); });
+    if(!good) return file;
+    const ext=type.indexOf('mp4')>=0?'.mp4':'.webm';
+    return new File([blob], (file.name.replace(/\.[^.]+$/,'')||'reel')+'-1080'+ext, {type});
+  }catch(e){ return file; }
+}
+let uploading=false, lastUp=null;
+async function doUpload(){
+  const f=$("file").files[0]; if(!f){alert("Choose a video first.");return;}
+  if(uploading) return;                  // the button is locked while in flight
+  if(fileId && lastUp===f.name+"|"+f.size+"|"+f.lastModified){
+    // trust the browser only if the SERVER still remembers the file — a
+    // deploy/restart wipes its in-memory uploads
+    const alive=await fetch(API+"/api/file/"+fileId,{cache:"no-store"})
+      .then(r=>r.ok?r.json():{ok:false}).then(d=>!!d.ok).catch(()=>false);
+    if(alive){ $("meta").innerHTML='<span class="ok">Already uploaded</span> — ready to go.'; return; }
+    fileId=null; lastUp=null;            // server forgot it -> really re-upload
+  }
+  uploading=true; const btn=$("up"); btn.disabled=true; const label=btn.textContent;
+  const prog=$("upProg"), bar=$("upBar");
+  try{
+    btn.textContent="Connecting…"; $("meta").textContent="Connecting to the server…";
+    if(!await ping(6000)){               // cold start: wake it, waiting patiently
+      btn.textContent="Waking server…";
+      $("meta").textContent="Waking the server… (it naps between visits — ~30 s)";
+      if(!await ping(45000)) await ping(45000);       // second chance, still free
+    }
+    let up=f;
+    if(task==='reel' && $("reelShrink") && $("reelShrink").checked){
+      btn.textContent="Optimizing…";
+      $("meta").textContent="Shrinking to 1080p… (one-time, keeps quality)";
+      try{ up=await maybeDownscale(f, 1920); }catch(e){ up=f; }
+    }
+    btn.textContent="Uploading…"; $("meta").textContent="Uploading…";
+    let r=null,d=null;
+    if(prog){ prog.style.display='block'; if(bar) bar.style.width='0'; }
+    for(let attempt=0;attempt<2;attempt++){           // auto-retry once on failure
+      try{
+        const fd=new FormData(); fd.append("file",up);
+        const upURL=API+"/api/upload"+(task==='reel'?"?intent=reel":"");
+        if(bar) bar.style.width='0';
+        const res=await xhrUpload(upURL, fd, (loaded,total)=>{
+          const pct=total?Math.round(loaded/total*100):0, mb=1048576;
+          if(bar) bar.style.width=pct+'%';
+          $("meta").textContent=`Uploading… ${pct}% · ${(loaded/mb).toFixed(0)}/${(total/mb).toFixed(0)} MB`;
+        });
+        r={ok:res.ok,status:res.status}; d=res.data; break;
+      }catch(e){ r=null;
+        if(attempt===0){ $("meta").textContent="Hiccup while uploading — retrying…";
+          if(bar) bar.style.width='0';
+          await new Promise(res=>setTimeout(res,2500)); }
+      }
+    }
+    if(!r){ track('upload_failed',{reason:'network'});
+      $("meta").textContent="Could not reach the server — check your connection and try again."; return; }
+    if(!r.ok){ track('upload_failed',{reason:'rejected',code:r.status});
+      $("meta").textContent="Error: "+((d&&d.detail)||"upload failed"); return; }
+    fileId=d.file_id; vw=d.width; vh=d.height; baseCache={};
+    lastUp=f.name+"|"+f.size+"|"+f.lastModified;    // double-upload guard key
+    track('upload_ok',{seconds:d.seconds,w:vw,h:vh});
+    // Predictive GPU pre-warm: a video is in, so a preview is likely imminent —
+    // boot the Modal GPU now (fire-and-forget) so its ~20s cold start overlaps the
+    // user brushing their mask / picking settings, and Preview lands on a warm GPU.
+    if(task==='remove'||task==='erase'||task==='enhance'){
+      try{ fetch(API+"/api/prewarm?task="+encodeURIComponent(task),{method:"POST",keepalive:true}).catch(()=>{}); }catch(e){}
+    }
+    if(task==='reel'){ try{ rTrimSetup(); }catch(e){} }
+    if(rawBeforeURL) URL.revokeObjectURL(rawBeforeURL);
+    rawBeforeURL=URL.createObjectURL(f); // last-resort Compare fallback (see compareReady)
+    $("meta").innerHTML=`<span class="ok">Loaded</span> ${vw}×${vh}, ${d.seconds}s`;
+    refC.width=maskC.width=vw; refC.height=maskC.height=vh;
+    mctx.clearRect(0,0,vw,vh);
+    savedMask=null; setFocus(null); resetCompare();
+    $("prev").disabled=false; $("exp").disabled=false;
+    setTask(task);                       // reveals the right controls + loads the canvas
+  } finally { uploading=false; btn.disabled=false; btn.textContent=label;
+    if(prog) prog.style.display='none'; }
+}
+$("up").addEventListener("click",doUpload);
+let MAXSEC=60, MAXREEL=900, MAXREELOUT=60, MAXREELMB=2048, MAXMB=200;   // caps; refreshed from /api/health
+function updateUploadLimit(){
+  const el=$("uploadLimit"); if(!el) return;
+  el.innerHTML=(task==='reel')
+    ? `Reel mode — upload up to <b>${MAXREEL}s</b> · max ${MAXREELMB} MB. Trim the part(s) you want; your reel can be up to <b>${MAXREELOUT}s</b>.`
+    : `Up to <b>${MAXSEC}s</b> · max ${MAXMB} MB per video · previews are free, export cleans the whole clip.`;
+}
+fetch(API+"/api/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+  if(d&&d.max_export_seconds) MAXSEC=d.max_export_seconds;
+  if(d&&d.max_upload_mb) MAXMB=d.max_upload_mb;
+  if(d&&d.max_reel_upload_seconds) MAXREEL=d.max_reel_upload_seconds;
+  if(d&&d.max_reel_upload_mb) MAXREELMB=d.max_reel_upload_mb;
+  if(d&&d.max_reel_output_seconds) MAXREELOUT=d.max_reel_output_seconds;
+  updateUploadLimit();
+}).catch(()=>{});
+$("file").addEventListener("change",()=>{
+  if(uploading) return;
+  const f=$("file").files[0]; $("tooLong").style.display='none'; $("up").disabled=false;
+  if(!f) return;
+  // Size guard BEFORE uploading: catch oversize files instantly (clear message)
+  // instead of letting them upload and bounce off a server 413. Cleanup modes cap
+  // at MAXMB (~200 MB); reels at MAXREELMB (~2 GB). Both refreshed from /api/health.
+  const mbCap=(task==='reel')?MAXREELMB:MAXMB;
+  if(f.size > mbCap*1048576){
+    track('upload_too_large',{mb:Math.round(f.size/1048576),cap:mbCap,task});
+    $("tooLong").innerHTML=`⚠ That file is <b>${(f.size/1048576).toFixed(0)} MB</b> — the limit is <b>${mbCap} MB</b> for this tool. Compress or trim it, then re-select.`;
+    $("tooLong").style.display='block'; $("up").disabled=true; $("meta").textContent=''; return;
+  }
+  $("meta").textContent="Checking your file…";
+  const cap=(task==='reel')?MAXREEL:MAXSEC;
+  try{ const v=document.createElement('video'); v.preload='metadata';
+    v.onloadedmetadata=()=>{ const s=v.duration||0; try{URL.revokeObjectURL(v.src);}catch(e){}
+      if(s>cap+0.5){ track('upload_too_long',{seconds:Math.round(s),task});
+        $("tooLong").innerHTML=(task==='reel')
+          ? `⚠ That clip is ${Math.round(s)}s — reels accept up to <b>${cap}s</b> of source footage. Pick a shorter file.`
+          : `⚠ That clip is ${Math.round(s)}s — the limit is <b>${cap}s</b> per video. Trim it to ${cap}s or less, then re-select.`;
+        $("tooLong").style.display='block'; $("up").disabled=true; $("meta").textContent=''; }
+      else { doUpload(); } };                 // length OK -> start uploading automatically
+    v.onerror=()=>{ $("meta").textContent="Ready — tap Upload."; };  // can't read metadata: manual fallback
+    v.src=URL.createObjectURL(f);
+  }catch(e){ doUpload(); }                     // no metadata support -> let the server validate
+});
+ping(20000);                             // pre-warm a sleeping server on page load
+
+let jobRunning=false, lastMode='preview';
+function jobBusy(b){ jobRunning=b; $("prev").disabled=b; $("exp").disabled=b;
+  if(!b){ $("mailNote").style.display="none"; stopWait(); } }
+/* Preview-wait reassurance: the first render after an idle spell has to warm up the
+   GPU (cold start), so a preview can take ~a minute. Without expectation-setting,
+   real users bounced mid-render (they left ~37s before their result was ready).
+   Show a live elapsed counter + "warming up" copy so they hang on. */
+let waitTimer=null, waitStart=0;
+function startWait(kind){
+  const el=$("waitNote"); if(!el) return;
+  if(kind!=='preview'){ stopWait(); return; }   // exports already reassure via #mailNote
+  waitStart=Date.now(); el.style.display='block';
+  const tick=()=>{
+    const s=Math.round((Date.now()-waitStart)/1000);
+    el.innerHTML = s<8
+      ? '⏳ Rendering your free preview…'
+      : `⏳ The first render warms up the GPU — this can take up to ~90s, then it's quick. Hang tight… <b>${s}s</b>`;
+  };
+  tick(); clearInterval(waitTimer); waitTimer=setInterval(tick,1000);
+}
+function stopWait(){ clearInterval(waitTimer); waitTimer=null;
+  const el=$("waitNote"); if(el){ el.style.display='none'; el.innerHTML=''; } }
+async function run(kind){
+  if(!fileId){alert("Upload a video first.");return;}
+  if(!$("owns").checked){alert("Please confirm you own / have rights to edit this video.");return;}
+  if(jobRunning){ $("status").textContent="A job is already running — hang tight."; return; }
+  jobBusy(true);
+  const body={file_id:fileId,mode:kind,owns_rights:true,protect:true,upscale:true,task,
+    clean_audio:$("cleanAudio").checked};
+  if(task==='remove'){ if(!maskEmpty()) body.mask=maskPNG(); }
+  else if(task==='erase'){
+    if(maskEmpty()){alert("Brush over what you want erased first.");return;}
+    body.mask=maskPNG(); body.track=$("trackChk").checked;
+  } else if(task==='enhance'){
+    body.scale=enhScale; body.denoise=$("denoise").checked;
+    body.strength=(+$("sharpAmt").value)/100;
+  } else if(task==='reframe'){ body.ratio=ratioSel; body.fit=fitSel;
+    if(focusPt&&fitSel==='crop') body.focus=[focusPt.x,focusPt.y];
+  } else if(task==='reel'){
+    body.ratio=reelRatio; body.fit=reelFit;
+    body.captions=(reelCapStyle!=='off');
+    if(reelCapStyle!=='off'){ body.cap_style=reelCapStyle; body.cap_pos=reelCapPos;
+      body.cap_size=reelCapSize; body.cap_color=reelCapColor; }
+    const cta=$("reelCta").value.trim();
+    if(cta){ body.cta=cta; body.card_theme=reelTheme; body.card_secs=+$("rCardSecs").value; }
+    const _segs=reelSegs.slice();
+    if(reelEnd>reelStart) _segs.push([+reelStart.toFixed(2),+reelEnd.toFixed(2)]);
+    if(_segs.length) body.segments=_segs;
+    if(reelRotate&&reelRotate!=='auto') body.rotate=reelRotate;
+    if(focusPt&&reelFit==='crop') body.focus=[focusPt.x,focusPt.y];
+  } else if(task==='blur'){
+    const tg=[]; if($("bFaces").checked)tg.push('face'); if($("bPlates").checked)tg.push('plate');
+    if(!tg.length&&maskEmpty()){alert("Tick faces or plates to blur — or brush a region first.");return;}
+    body.targets=tg; body.style=blurStyle; body.strength=(+$("blurAmt").value)/100;
+    if(!maskEmpty()){ body.mask=maskPNG(); body.track=$("trackChk").checked; }
+  }
+  const RUN_COPY={remove:"Submitting — analysing the watermark…",
+    erase:"Submitting — analysing the marked region…",
+    enhance:"Submitting — enhancement starts in a moment…",
+    blur:"Submitting — finding faces/plates to blur…",
+    captions:"Submitting — transcription starts in a moment…",
+    reel:"Submitting — building your reel (reframe → captions → end card)…",
+    reframe:(focusPt&&fitSel==='crop'&&task==='reframe')
+      ?"Submitting — cropping around your focus point…"
+      :"Submitting — smart-tracking the subject…"};
+  $("prog").style.width="6%"; $("status").textContent=RUN_COPY[task]||"Submitting…";
+  $("dl").style.display="none"; $("srtDl").style.display="none"; $("retry").style.display="none"; $("signinNudge").style.display="none"; $("previewCta").style.display="none";
+  resetCompare();
+  if(kind==='export') track('export_click',{task});
+  try{
+    const r=await fetch(API+"/api/jobs",{method:"POST",
+      headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok){
+      jobBusy(false);
+      $("prog").style.width="0";
+      if(r.status===404 && /file_id/i.test((d&&d.detail)||"")){
+        fileId=null; lastUp=null;        // server restarted: its uploads are gone
+        $("prev").disabled=true; $("exp").disabled=true;
+        $("status").textContent="The server restarted and forgot your upload — hit Upload again (takes a moment), then re-run.";
+        return;
+      }
+      if(r.status===401){
+        track('export_blocked_signin',{task});
+        $("status").textContent="";
+        nudgeSignin('🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> No card needed: enter your email below and we\'ll send a one-tap sign-in link.');
+      }
+      else if(r.status===402){ track('export_blocked_credits',{task}); $("status").textContent="Out of export credits — grab a pack below."; $("buy").click(); }
+      else if(r.status===429){ $("status").textContent=(d&&d.detail)||"We're at capacity right now — please try again in a few minutes."; }
+      else $("status").textContent="Error: "+(d.detail||"failed");
+      return;
+    }
+    if(kind==='export'){
+      $("mailNote").innerHTML='📧 Exports can take a while — we\'ll email <b>'+
+        ((auth&&auth.email)||'you')+'</b> with a download link the moment it\'s ready, '+
+        'so it\'s safe to close this tab.';
+      $("mailNote").style.display='block';
+    }
+    track(kind==='export'?'export_submitted':'preview_submitted',
+          {task,clean_audio:$("cleanAudio").checked});
+    lastMode=kind;
+    startWait(kind);
+    poll(d.job_id, task);
+  }catch(e){ jobBusy(false); $("status").textContent="Network error."; }
+}
+$("prev").onclick=()=>run("preview");
+$("exp").onclick=()=>run("export");
+function nudgeSignin(msg){
+  $("signinNudge").innerHTML=msg; $("signinNudge").style.display='block';
+  try{ document.getElementById('acct').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  const em=$("email"); try{ em.classList.remove('pulse'); void em.offsetWidth; em.classList.add('pulse'); em.focus({preventScroll:true}); }catch(e){}
+}
+/* Proactive nudge the moment a PREVIEW finishes — the delight point where real
+   users were leaving without ever reaching the export/sign-in gate. */
+function showPreviewCta(t){
+  const el=$("previewCta"); if(!el) return;
+  const signedIn=!!(auth&&auth.session), credits=signedIn?(auth.credits||0):0;
+  track('preview_nudge_shown',{task:t,signed_in:signedIn,credits});
+  const b=document.createElement('button'); b.className='btn';
+  if(signedIn && credits>0){
+    el.innerHTML='✨ <b>Looks good?</b> That was a short preview — export the full-length video now. &nbsp;';
+    b.textContent='⬇ Export the full video';
+    b.onclick=()=>{ track('preview_nudge_click',{signed_in:true}); run('export'); };
+  } else if(signedIn){
+    el.innerHTML='✨ <b>Looks good?</b> You\'re out of export credits — grab a pack to export the full video. &nbsp;';
+    b.textContent='Get export credits';
+    b.onclick=()=>{ track('preview_nudge_click',{signed_in:true,credits:0}); try{$("buy").click();}catch(e){} };
+  } else {
+    el.innerHTML='✨ <b>Like it?</b> That\'s a free preview of the first few seconds. Sign in free to export the full clean video — <b>2 credits, no card.</b> &nbsp;';
+    b.textContent='Sign in → get the full video';
+    b.onclick=()=>{ track('preview_nudge_click',{signed_in:false}); nudgeSignin('🎁 <b>Your preview worked — sign in and get 2 free export credits.</b> Enter your email below for a one-tap sign-in link.'); };
+  }
+  el.appendChild(b); el.style.display='block';
+}
+
+async function poll(id, t, fails=0){
+  try{
+    const r=await fetch(API+`/api/jobs/${id}`);
+    if(!r.ok) throw new Error("http "+r.status);
+    const j=await r.json();
+    $("prog").style.width=Math.round((j.progress||0)*100)+"%";
+    $("status").textContent=j.message||j.status;
+    if(j.status==="done"){jobBusy(false);
+      track('job_done',{task:t,mode:lastMode,confidence:j.qc?j.qc.confidence:null});
+      const now=Date.now(), u=API+j.result_url+"?t="+now;
+      $("out").src=u; $("dl").href=u; $("dl").style.display="inline-block"; refreshMe();
+      if(j.srt_url){ $("srtDl").href=API+j.srt_url; $("srtDl").style.display="inline-block"; }
+      compareReady(u,t,j.before_url?API+j.before_url+"?t="+now:null);
+      const editTask=(t==='remove'||t==='erase'||t==='blur');
+      $("retry").style.display=editTask?"block":"none";
+      if(j.qc && editTask){const c=Math.round((j.qc.confidence||0)*100);
+        if(j.qc.ok){ $("status").textContent=`Clean ✓  (quality ${c}%)`+
+          (beforeURL?" — flip to Compare to check it.":"."); }
+        else { $("status").innerHTML=`Quality ${c}% — some of it may remain. `+
+          `For a spotless result, adjust your highlight on the canvas above and re-run.`; }
+      } else { $("status").textContent=beforeURL
+        ?"Done ✓ — flip to Compare to see before / after.":"Done ✓ — your result is ready."; }
+      if(lastMode==='preview') showPreviewCta(t); else $("previewCta").style.display='none';
+      return;}
+    if(j.status==="error"){ jobBusy(false);
+      track('job_error',{task:t,mode:lastMode});
+      $("prog").style.width="0";
+      $("status").textContent="⚠ "+(j.error||"Processing failed.")+
+        " Tweak your settings and try again — previews are free."; return; }
+    setTimeout(()=>poll(id,t),1200);
+  }catch(e){
+    if(fails<12){ $("status").textContent="Still working… the server may be waking from a nap (~30 s) — hang tight.";
+      setTimeout(()=>poll(id,t,fails+1),3000); }
+    else { jobBusy(false); $("status").textContent="Lost the connection while processing. The job may still be running — try again in a minute."; }
+  }
+}
+/* ---------- before / after compare ---------- */
+/* The "before" side is the BACKEND's {job}_before.mp4 (H.264, same segment &
+   duration as the result). Browsers often can't decode the raw upload
+   (HEVC / mp4v / .mov / .avi), which used to render a black Before — so the
+   raw file's object URL is only a last resort, and a before that still fails
+   to load hides the Compare toggle instead of ever showing a broken view. */
+let beforeURL=null, afterURL=null, cmpTask='remove', cmpPos=0.6;
+let rawBeforeURL=null;                     // object URL of the raw upload (fallback only)
+const cmpA=$("cmpA"), cmpB=$("cmpB"), sbsA=$("sbsA"), sbsB=$("sbsB");
+function setCmpPos(p){                     // divider position, 0..1 of the width
+  cmpPos=Math.min(0.94,Math.max(0.06,p));
+  cmpB.style.clipPath=`inset(0 ${(100-cmpPos*100).toFixed(2)}% 0 0)`;
+  $("cmpDiv").style.left=`calc(${(cmpPos*100).toFixed(2)}% - 1px)`;
+}
+function sizeCmp(){                        // size the slider box to the source aspect so the
+  const ar=(vw&&vh)?vw/vh:9/16;            // BEFORE & AFTER overlay exactly (no black bars/zoom)
+  const el=$("cmpSlide"), host=el.parentElement;
+  const avail=(host&&host.clientWidth)||el.clientWidth||320;
+  const maxH=Math.min((window.innerHeight||800)*0.62, 560);
+  let cw=avail, ch=cw/ar; if(ch>maxH){ ch=maxH; cw=ch*ar; }
+  el.style.width=Math.round(cw)+'px'; el.style.height=Math.round(ch)+'px';
+}
+function cmpSync(a,b){                     // keep BEFORE locked to AFTER's timeline
+  if(Math.abs((b.currentTime||0)-(a.currentTime||0))>0.06){
+    try{ b.currentTime=a.currentTime||0; }catch(e){}
+  }
+}
+let cmpRAF=0;
+function cmpTick(){                        // continuous tight sync while the slider is open
+  if(getComputedStyle($("cmpSlide")).display==='none'){ cmpRAF=0; return; }
+  cmpSync(cmpA,cmpB);
+  cmpRAF=requestAnimationFrame(cmpTick);
+}
+sbsA.addEventListener('timeupdate',()=>cmpSync(sbsA,sbsB));
+window.addEventListener('resize',()=>{ if($("cmpSlide").style.display!=='none') sizeCmp(); });
+function showView(mode){                   // 'result' | 'compare'
+  const cmp=(mode==='compare'&&afterURL&&beforeURL);
+  $("vResult").classList.toggle('active',!cmp);
+  $("vCompare").classList.toggle('active',!!cmp);
+  const slide=(cmpTask!=='reframe'&&cmpTask!=='reel'); // aspect changes -> side-by-side
+  $("out").style.display=cmp?'none':'';
+  $("cmpSlide").style.display=(cmp&&slide)?'block':'none';
+  $("cmpSbs").style.display=(cmp&&!slide)?'flex':'none';
+  $("cmpHint").style.display=(cmp&&slide)?'block':'none';
+  if(cmp){
+    try{ $("out").pause(); }catch(e){}
+    const A=slide?cmpA:sbsA, B=slide?cmpB:sbsB;
+    if(A.getAttribute('src')!==afterURL) A.src=afterURL;    // lazy-load on first open
+    if(B.getAttribute('src')!==beforeURL) B.src=beforeURL;
+    if(slide){ sizeCmp(); setCmpPos(cmpPos); if(!cmpRAF) cmpRAF=requestAnimationFrame(cmpTick); }
+    try{ A.currentTime=0; B.currentTime=0; }catch(e){}       // start both aligned
+    A.play().catch(()=>{}); B.play().catch(()=>{});
+  } else {
+    [cmpA,cmpB,sbsA,sbsB].forEach(v=>{ try{ v.pause(); }catch(e){} });
+  }
+}
+$("vResult").onclick=()=>showView('result');
+$("vCompare").onclick=()=>showView('compare');
+function compareReady(url,t,before){       // a job finished -> offer the toggle
+  afterURL=url; cmpTask=t;
+  beforeURL=before||rawBeforeURL||null;    // prefer the server clip; raw file = last resort
+  $("vCompare").style.display=beforeURL?'':'none';
+  $("viewBar").style.display=beforeURL?'flex':'none';   // no before -> Result only
+}
+function beforeBroken(){                   // before can't load -> never show a black compare
+  if(!beforeURL) return;
+  const active=$("vCompare").classList.contains('active');
+  if(rawBeforeURL&&beforeURL!==rawBeforeURL){          // one retry: the raw upload
+    beforeURL=rawBeforeURL;
+    [cmpB,sbsB].forEach(v=>v.removeAttribute('src')); // force a reload on next show
+    if(active) showView('compare');
+    return;
+  }
+  beforeURL=null;                          // out of options -> Result only
+  $("vCompare").style.display='none'; $("viewBar").style.display='none';
+  showView('result');
+}
+[cmpB,sbsB].forEach(v=>{
+  v.addEventListener('error',()=>{ if(v.getAttribute('src')) beforeBroken(); });
+  v.addEventListener('stalled',()=>{ if(v.getAttribute('src')&&v.readyState===0) beforeBroken(); });
+});
+function resetCompare(){                   // new upload / new job -> back to Result
+  afterURL=null; beforeURL=null;           // the before clip belongs to ONE job
+  $("viewBar").style.display='none'; $("vCompare").style.display='none';
+  showView('result');
+  [cmpA,cmpB,sbsA,sbsB].forEach(v=>v.removeAttribute('src'));
+}
+/* drag (or tap) anywhere on the slider to sweep before/after */
+let cmpDrag=false; const slideEl=$("cmpSlide");
+function cmpFromEvent(e){ const r=slideEl.getBoundingClientRect();
+  setCmpPos((e.clientX-r.left)/(r.width||1)); }
+slideEl.addEventListener('pointerdown',e=>{ e.preventDefault(); cmpDrag=true;
+  try{ slideEl.setPointerCapture(e.pointerId); }catch(x){} cmpFromEvent(e); });
+slideEl.addEventListener('pointermove',e=>{ if(cmpDrag) cmpFromEvent(e); });
+['pointerup','pointercancel'].forEach(ev=>slideEl.addEventListener(ev,()=>cmpDrag=false));
+
+/* deep-link from SEO pages: /#tool=erase|blur|enhance|reframe|remove */
+/* scroll-reveal choreography (skipped when reduced motion is preferred) */
+try{
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window){
+    const io=new IntersectionObserver(es=>es.forEach(e=>{
+      if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }
+    }),{threshold:.12});
+    document.querySelectorAll('.feat .card,.steps .card,h2.sec,#faq details').forEach((el,i)=>{
+      el.classList.add('reveal'); el.style.setProperty('--d', i%3); io.observe(el); });
+  }
+}catch(e){}
+const _deepTask=(location.hash.match(/^#tool=(remove|erase|enhance|reframe|blur|captions|reel)$/)||[])[1];
+setTask(_deepTask||'remove');   // sync the per-mode controls once at startup
+if(_deepTask){ history.replaceState(null,'','#tool');
+  setTimeout(()=>{ const el=document.getElementById('tool');
+    if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },60); }
+</script>
+</body>
+</html>
