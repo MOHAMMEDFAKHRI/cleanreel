@@ -18,7 +18,7 @@ const JOBS = [
   { id: 'caption', Icon: MessageSquare, title: 'Add captions', desc: 'Auto subtitles' },
 ]
 
-export default function Home({ uploading, onFile, hint, onHint }) {
+export default function Home({ uploading, error, onFile, hint, onHint }) {
   const inputRef = useRef(null)
   const [drag, setDrag] = useState(false)
   const [demosOpen, setDemosOpen] = useState(() => window.location.hash === '#demos')
@@ -62,6 +62,13 @@ export default function Home({ uploading, onFile, hint, onHint }) {
             <div className="fname">{uploading.name}</div>
             <div className="cr-progress"><i style={{ width: uploading.pct + '%' }} /></div>
             <div className="t2">{uploading.pct}% · never shared, auto-deletes</div>
+          </>
+        ) : error ? (
+          <>
+            <div className="tile err">!</div>
+            <div className="t1">That didn’t work</div>
+            <div className="t2 err">{error}</div>
+            <div className="t2">Tap to try another clip</div>
           </>
         ) : (
           <>

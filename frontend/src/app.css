@@ -553,3 +553,10 @@
 .cr-menu a:hover, .cr-menu button:hover { background: var(--tint); color: var(--chipink); }
 .cr-menu .danger { color: #d64545; }
 .cr-menu .danger:hover { background: rgba(214, 69, 69, 0.08); color: #d64545; }
+
+/* sticky upload-rejection state on the dropzone */
+.cr-drop .tile.err {
+  background: linear-gradient(135deg, #d64545, #b83d6e);
+  font-size: 22px; font-weight: 800; box-shadow: 0 6px 16px rgba(214, 69, 69, 0.35);
+}
+.cr-drop .t2.err { color: #d64545; font-weight: 600; max-width: 300px; line-height: 1.45; }

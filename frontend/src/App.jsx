@@ -36,6 +36,7 @@ export default function App() {
 
   const [auth, setAuth] = useState(loadAuth)
   const [up, setUp] = useState(null)
+  const [upErr, setUpErr] = useState(null)   // sticky rejection message on the dropzone
   const [job, setJob] = useState(null)
   const [video, setVideo] = useState(null)
   const jobRef = useRef(null)
@@ -102,6 +103,7 @@ export default function App() {
     if (!file) return
     if (!file.type.startsWith('video/')) { showToast('That doesn’t look like a video'); return }
     const jobHint = jobRef.current
+    setUpErr(null)
     setUp({ name: file.name, pct: 0 })
     let res = null
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
@@ -111,8 +113,8 @@ export default function App() {
         if (attempt === 0) { showToast('Hiccup while uploading — retrying…'); setUp({ name: file.name, pct: 0 }) }
       }
     }
-    if (!res) { setUp(null); track('upload_failed', { reason: 'network' }); showToast('Could not reach the server — try again'); return }
-    if (!res.ok) { setUp(null); track('upload_failed', { reason: 'rejected', code: res.status }); showToast(res.data?.detail || 'Upload failed'); return }
+    if (!res) { setUp(null); track('upload_failed', { reason: 'network' }); setUpErr('Could not reach the server — check your connection and try again.'); return }
+    if (!res.ok) { setUp(null); track('upload_failed', { reason: 'rejected', code: res.status }); setUpErr(res.data?.detail || 'That upload didn’t work — try again.'); return }
     const d = res.data
     track('upload_ok', { seconds: d.seconds, w: d.width, h: d.height })
     prewarm(jobHint === 'erase' ? 'erase' : jobHint === 'enhance' ? 'enhance' : 'remove')
@@ -374,7 +376,7 @@ export default function App() {
               )}
             </div>
           </header>
-          <Home uploading={up} onFile={startUpload} hint={job} onHint={setHint} />
+          <Home uploading={up} error={upErr} onFile={startUpload} hint={job} onHint={setHint} />
         </>
       )}
       {screen === 'analyzing' && <Analyzing />}
