@@ -531,3 +531,25 @@
 .cr-demogrid.page .ba { aspect-ratio: 16 / 9; border-radius: 11px; }
 .cr-demogrid.page .cr-demo > b { font-size: 14px; }
 .cr-demogrid.page .cr-demo p { font-size: 12px; }
+
+/* ---------- avatar account menu ---------- */
+.cr-avatarwrap { position: relative; }
+.cr-menuveil { position: fixed; inset: 0; z-index: 34; }
+.cr-menu {
+  position: absolute; top: 40px; right: 0; z-index: 35; width: 224px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(23, 26, 43, 0.18); padding: 8px;
+  display: flex; flex-direction: column; animation: crPop 0.18s ease;
+}
+.cr-menu .who {
+  font-size: 12.5px; font-weight: 700; padding: 8px 10px 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-menu .creds { font-size: 11px; color: var(--mut); padding: 0 10px 8px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.cr-menu a, .cr-menu button {
+  text-align: left; font-size: 13px; font-weight: 600; color: var(--ink);
+  padding: 9px 10px; border-radius: 9px; text-decoration: none;
+}
+.cr-menu a:hover, .cr-menu button:hover { background: var(--tint); color: var(--chipink); }
+.cr-menu .danger { color: #d64545; }
+.cr-menu .danger:hover { background: rgba(214, 69, 69, 0.08); color: #d64545; }

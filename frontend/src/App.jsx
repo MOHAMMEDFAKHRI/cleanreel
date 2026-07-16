@@ -54,6 +54,8 @@ export default function App() {
   const [email, setEmail] = useState(auth?.email || '')
   const [sheetErr, setSheetErr] = useState(null)
   const [sheetBusy, setSheetBusy] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const sheetIntent = useRef('export')   // 'export' = sign-in leads to saving; 'signin' = just sign in
   const pollRef = useRef(null)
 
   useEffect(() => {
@@ -274,7 +276,7 @@ export default function App() {
   const onSave = useCallback(() => {
     track('export_click', { signed_in: !!auth?.session })
     if (auth?.session) startExport()
-    else { setSheetErr(null); setSheet('email') }
+    else { sheetIntent.current = 'export'; setSheetErr(null); setSheet('email') }
   }, [auth, startExport])
 
   const onBuyPack = useCallback(async (packId) => {
@@ -289,6 +291,17 @@ export default function App() {
       else showToast(d?.detail || 'Could not start checkout')
     } catch { showToast('Network hiccup — try again') }
   }, [auth, showToast])
+
+  const openPacks = useCallback(async () => {
+    setMenuOpen(false)
+    setPacks(null); setSheet('credits')
+    try {
+      const d = await fetch((window.API_BASE || 'https://cleanreel.onrender.com') + '/api/packs').then(r => r.json())
+      setPacks(d?.configured ? Object.entries(d.packs || {}) : [])
+    } catch { setPacks([]) }
+  }, [])
+
+  const signOut = useCallback(() => { setAuthBoth(null); setMenuOpen(false); showToast('Signed out') }, [setAuthBoth, showToast])
 
   const onSendCode = useCallback(async () => {
     setSheetBusy(true); setSheetErr(null)
@@ -307,8 +320,9 @@ export default function App() {
     if (!r.ok) { setSheetErr(r.data?.detail || 'That code didn’t match — check the email.'); return }
     track('signin_code')
     setAuthBoth({ session: r.data.session, email: r.data.email, credits: r.data.credits })
-    startExport()
-  }, [email, setAuthBoth, startExport])
+    if (sheetIntent.current === 'export') startExport()
+    else { setSheet(null); showToast('Signed in — ' + r.data.email) }
+  }, [email, setAuthBoth, startExport, showToast])
 
   const reset = useCallback(() => {
     clearInterval(pollRef.current)
@@ -330,7 +344,35 @@ export default function App() {
             <button className="cr-iconbtn" aria-label="Toggle dark mode" onClick={() => setDark(d => !d)}>
               {dark ? <Sun size={17} /> : <Moon size={17} />}
             </button>
-            <div className="cr-avatar" aria-hidden>{(auth?.email || 'M')[0].toUpperCase()}</div>
+            <div className="cr-avatarwrap">
+              <button className="cr-avatar" aria-label="Account" onClick={() => setMenuOpen(o => !o)}>
+                {auth?.email ? auth.email[0].toUpperCase() : '?'}
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="cr-menuveil" onClick={() => setMenuOpen(false)} />
+                  <div className="cr-menu">
+                    {auth?.session ? (
+                      <>
+                        <div className="who">{auth.email}</div>
+                        <div className="creds">{auth.credits ?? '…'} export credit{auth.credits === 1 ? '' : 's'}</div>
+                        <a href="/account.html">My work</a>
+                        <button onClick={openPacks}>Buy credits</button>
+                        <button className="danger" onClick={signOut}>Sign out</button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="who">Not signed in</div>
+                        <div className="creds">2 free exports when you do — no card needed</div>
+                        <button onClick={() => { sheetIntent.current = 'signin'; setSheetErr(null); setMenuOpen(false); setSheet('email') }}>
+                          Sign in with email
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </header>
           <Home uploading={up} onFile={startUpload} hint={job} onHint={setHint} />
         </>

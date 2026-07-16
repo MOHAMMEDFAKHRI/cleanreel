@@ -14,7 +14,7 @@ export default function ReelPlanScreen({ opts, setOpts, onBack, onNext }) {
   return (
     <JobShell
       title="Here’s your reel plan"
-      sub="We picked sensible defaults — flip anything you don’t want."
+      sub="We cut a reel from your footage — long clips welcome. Flip anything you don’t want."
       onBack={onBack}
       cta={opts.endCard ? 'Next — write your end card' : 'Build my reel preview — free'}
       onCta={onNext}

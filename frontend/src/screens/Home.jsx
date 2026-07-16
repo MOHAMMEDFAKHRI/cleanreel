@@ -68,7 +68,7 @@ export default function Home({ uploading, onFile, hint, onHint }) {
       <div className="cr-label">Or pick a job</div>
       <button className="cr-reelcard" onClick={() => !uploading && pick('reel')}>
         <Clapperboard size={22} strokeWidth={2} />
-        <span className="txt"><b>Make a Reel</b><i>Cut, caption & crop — one pass, ready to post</i></span>
+        <span className="txt"><b>Make a Reel</b><i>Cut, caption & crop — takes up to 15 min of footage</i></span>
       </button>
       <div className="cr-jobs">
         {JOBS.map(({ id, Icon, title, desc }) => (
