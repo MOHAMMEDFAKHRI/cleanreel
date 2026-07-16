@@ -137,3 +137,128 @@
   background: var(--card); color: var(--ink); border: 1px solid var(--line);
   box-shadow: none;
 }
+
+/* ---------- mark screen (§3) ---------- */
+.cr-markframe {
+  position: relative; width: 100%; border-radius: 16px; overflow: hidden;
+  margin-top: 14px; background: #171a2b; cursor: pointer; user-select: none;
+  max-height: 56dvh;
+}
+.cr-markframe img {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+  pointer-events: none;
+}
+.cr-region { position: absolute; border-radius: 8px; }
+.cr-region.det {
+  border: 2px solid var(--acc);
+  animation: crPulse 1.8s ease infinite;
+}
+.cr-region.sel { border: 2.5px dashed var(--acc); }
+.cr-dettag {
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--acc); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 3px 7px; border-radius: 6px; white-space: nowrap; animation: crPop 0.3s ease;
+}
+.cr-movetag {
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(23, 26, 43, 0.85); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap; animation: crPop 0.3s ease;
+}
+@keyframes crRipple {
+  from { transform: translate(-50%, -50%) scale(0.3); opacity: 0.9; }
+  to   { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+}
+.cr-ripple {
+  position: absolute; width: 52px; height: 52px; border-radius: 999px;
+  border: 2px solid #fff; pointer-events: none;
+  animation: crRipple 0.5s ease forwards;
+}
+@keyframes crCoach { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.cr-coach {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  color: #fff; font-size: 10.5px; font-weight: 700;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7); white-space: nowrap;
+  animation: crCoach 1.6s ease infinite; pointer-events: none;
+}
+.cr-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 34px; margin-top: 12px; }
+.cr-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--tint); border: 1px solid var(--chipbrd); border-radius: 999px;
+  padding: 7px 12px; font-size: 12px; font-weight: 700; color: var(--chipink);
+  animation: crPop 0.25s ease;
+}
+.cr-chip.ghost {
+  background: none; border: 1.5px dashed var(--dash2); color: var(--mut); cursor: default;
+}
+.cr-hint { margin-top: 10px; font-size: 11.5px; color: var(--mut); text-align: center; line-height: 1.5; }
+.cr-hint.faint { color: var(--faint); font-size: 10.5px; }
+
+/* ---------- working screen (§4) ---------- */
+.cr-eyebrow {
+  font-size: 12px; font-weight: 700; color: var(--acc);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.cr-workframe {
+  position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 16px;
+  background: linear-gradient(160deg, #3a3f63, #22263f 55%, #171a2b); overflow: hidden;
+}
+[data-theme='dark'] .cr-workframe { background: linear-gradient(160deg, #2a2f52, #191d33 55%, #101322); }
+.cr-workframe .mono {
+  position: absolute; right: 10px; bottom: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: rgba(255, 255, 255, 0.85);
+}
+.cr-steps { list-style: none; width: 100%; display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.cr-steps li { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--faint); }
+.cr-steps li.active { color: var(--ink); font-weight: 700; }
+.cr-steps li.done { color: var(--mut); }
+.cr-steps .dot {
+  width: 14px; height: 14px; border-radius: 999px; border: 1.5px solid var(--line);
+  display: inline-grid; place-items: center; flex: none;
+}
+.cr-steps .dot.done { border-color: var(--ok); background: var(--okbg); color: var(--ok); }
+.cr-steps .dot.spin {
+  border: 2px solid var(--tint); border-top-color: var(--acc);
+  animation: crSpin 0.8s linear infinite;
+}
+.cr-progress.slim { height: 6px; border-radius: 3px; }
+
+/* ---------- preview screen (§5) ---------- */
+.cr-okbadge {
+  display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  background: var(--okbg); color: var(--ok); font-size: 12px; font-weight: 700;
+  padding: 6px 11px; border-radius: 999px; margin-bottom: 10px; animation: crPop 0.3s ease;
+}
+.cr-compare {
+  position: relative; width: 100%; border-radius: 16px; overflow: hidden;
+  background: #171a2b; margin-top: 14px; cursor: ew-resize; touch-action: none;
+  max-height: 56dvh; aspect-ratio: 4 / 5;
+}
+.cr-compare video.after { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cr-compare .beforeWrap {
+  position: absolute; inset: 0 auto 0 0; overflow: hidden;
+  border-right: 2px solid #fff; filter: brightness(0.92);
+}
+.cr-compare .beforeWrap video {
+  position: absolute; top: 0; left: 0; height: 100%; object-fit: contain;
+}
+.cr-compare .tag {
+  position: absolute; top: 10px; font-size: 10px; font-weight: 700; color: #fff;
+  background: rgba(23, 26, 43, 0.72); padding: 3px 7px; border-radius: 6px;
+}
+.cr-compare .tag.tl { left: 10px; } .cr-compare .tag.tr { right: 10px; }
+.cr-compare .handle {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 36px; height: 36px; border-radius: 999px; background: #fff; color: #171a2b;
+  display: grid; place-items: center; font-size: 14px; font-weight: 700;
+  pointer-events: none; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.cr-resultchips {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px;
+}
+.cr-resultchips span {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 11px; font-size: 11.5px; font-weight: 700; color: var(--ok);
+}

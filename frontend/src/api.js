@@ -34,3 +34,28 @@ export function upload(file, { intent, onProgress } = {}) {
     xhr.send(fd)
   })
 }
+
+/** Region metadata for tap-to-select (CLE-44 phase b). Server caches per file. */
+export function getRegions(fileId) {
+  return fetch(`${API}/api/regions/${fileId}?targets=marks,face,plate`, { method: 'POST' })
+    .then(r => r.ok ? r.json() : null).catch(() => null)
+}
+
+/** The canvas still every bbox is anchored to. */
+export const frameUrl = (fileId) => `${API}/api/frame/${fileId}`
+
+/** Free preview render. body: {file_id, task, mode:'preview', auto, boxes, owns_rights} */
+export async function createJob(body) {
+  const r = await fetch(API + '/api/jobs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return { ok: r.ok, status: r.status, data: await r.json().catch(() => null) }
+}
+
+export function jobStatus(id) {
+  return fetch(`${API}/api/jobs/${id}`, { cache: 'no-store' }).then(r => r.json())
+}
+
+/** result_url / before_url from job status are API-relative. */
+export const absUrl = (u) => (u && u.startsWith('/') ? API + u : u)
