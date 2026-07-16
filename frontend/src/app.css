@@ -279,3 +279,50 @@
   position: absolute; top: 0; bottom: 0; width: 2px; background: #fff;
   transform: translateX(-50%); pointer-events: none;
 }
+
+/* ---------- sign-in sheet (§6) ---------- */
+.cr-overlay {
+  position: fixed; inset: 0; background: rgba(23, 26, 43, 0.45);
+  display: flex; align-items: flex-end; justify-content: center; z-index: 40;
+  animation: crPop 0.2s ease;
+}
+.cr-sheet {
+  width: 100%; max-width: 430px; background: var(--sheet);
+  border-radius: 22px 22px 0 0; padding: 10px 22px calc(24px + env(safe-area-inset-bottom));
+  animation: crSheetUp 0.28s ease;
+}
+@keyframes crSheetUp { from { transform: translateY(40%); opacity: 0.6; } to { transform: none; opacity: 1; } }
+.cr-sheet .grab {
+  width: 36px; height: 4px; border-radius: 2px; background: var(--line);
+  margin: 4px auto 14px;
+}
+.cr-sheet .row { display: flex; align-items: center; justify-content: space-between; }
+.cr-sheet h3 { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.cr-sheet .close {
+  width: 28px; height: 28px; border-radius: 9px; background: var(--tint);
+  color: var(--mut); display: grid; place-items: center;
+}
+.cr-sheet .body { font-size: 13.5px; color: var(--mut); line-height: 1.55; margin-top: 8px; }
+.cr-sheet .body b { color: var(--ink); }
+.cr-sheet input {
+  width: 100%; margin-top: 14px; padding: 14px; border-radius: 12px;
+  border: 1.5px solid var(--line); background: var(--field); color: var(--ink);
+  font-size: 15px; outline: none; transition: border-color 0.15s ease;
+}
+.cr-sheet input:focus { border-color: var(--acc); }
+.cr-sheet input.code {
+  font-size: 20px; font-weight: 700; letter-spacing: 0.4em; text-align: center;
+}
+.cr-sheet .cr-cta { margin-top: 14px; }
+.cr-sheet .foot { margin-top: 10px; font-size: 11px; color: var(--faint); text-align: center; }
+.cr-sheet .err { margin-top: 10px; font-size: 12px; color: #d64545; font-weight: 600; }
+
+/* ---------- done screen (§7) ---------- */
+.cr-donecheck {
+  width: 76px; height: 76px; border-radius: 999px; background: var(--okbg);
+  color: var(--ok); display: grid; place-items: center; animation: crCheck 0.5s ease;
+}
+.cr-creditpill {
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 14px; font-size: 12px; font-weight: 700; color: var(--acc);
+}
