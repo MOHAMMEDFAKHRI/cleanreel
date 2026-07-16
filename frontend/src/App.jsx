@@ -118,6 +118,11 @@ export default function App() {
     setUp(null); setPreview(null); setDone(null)
     setScreen('analyzing')
 
+    if (jobHint === 'reel') {            // reels don't need watermark detection
+      setRegions([]); setSelected(new Set())
+      setTimeout(() => setScreen('reelplan'), MIN_ANALYZE_MS)
+      return
+    }
     const t0 = Date.now()
     const resp = await getRegions(d.file_id)
     const wait = Math.max(0, MIN_ANALYZE_MS - (Date.now() - t0))
@@ -126,7 +131,7 @@ export default function App() {
       track('regions_found', { n: regs.length, preselected: regs.filter(r => r.preselected).length, type: resp?.watermark_type })
       setRegions(regs)
       setSelected(new Set(regs.filter(r => r.preselected).map(r => r.id)))
-      const dest = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions' }[jobHint] || 'mark'
+      const dest = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions', reel: 'reelplan' }[jobHint] || 'mark'
       setScreen(dest)
       if (dest === 'mark') {
         const found = regs.filter(r => r.preselected)
