@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { ArrowUp, Droplet, Eraser, Sparkles, Smartphone, EyeOff, MessageSquare, Clapperboard } from 'lucide-react'
+import Demos from './Demos.jsx'
 
 const JOBS = [
   { id: 'remove',  Icon: Droplet,       title: 'Take a mark off my video', desc: 'Logos, watermarks, text' },
@@ -68,6 +69,8 @@ export default function Home({ uploading, onFile, hint, onHint }) {
           </button>
         ))}
       </div>
+
+      <Demos onTry={(job) => !uploading && pick(job)} />
 
       <footer className="cr-foot">
         For videos you own or are licensed to edit · free preview on everything

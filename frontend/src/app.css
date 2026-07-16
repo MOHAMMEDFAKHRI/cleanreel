@@ -476,3 +476,31 @@
 .cr-pack:hover { border-color: var(--acc); }
 .cr-pack b { font-size: 13.5px; font-weight: 700; }
 .cr-pack span { font-size: 13.5px; font-weight: 800; color: var(--acc); }
+
+/* ---------- "See it work" demo grid (ported from classic home) ---------- */
+.cr-demogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.cr-demo {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 10px; box-shadow: var(--sh-card); display: flex; flex-direction: column; gap: 7px;
+}
+.cr-demo > b { font-size: 12.5px; font-weight: 700; }
+.cr-demo .ba {
+  position: relative; aspect-ratio: 16 / 10; border-radius: 9px; overflow: hidden;
+  cursor: ew-resize; touch-action: none; background: #171a2b;
+}
+.cr-demo .ba img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  pointer-events: none; user-select: none;
+}
+.cr-demo .ba .line {
+  position: absolute; top: 0; bottom: 0; width: 2px; background: #fff;
+  transform: translateX(-50%); pointer-events: none;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+}
+.cr-demo .ba .tag {
+  position: absolute; top: 6px; text-decoration: none; font-size: 8.5px; font-weight: 700;
+  color: #fff; background: rgba(23, 26, 43, 0.72); padding: 2px 5px; border-radius: 4px;
+}
+.cr-demo .ba .tag.tl { left: 6px; } .cr-demo .ba .tag.tr { right: 6px; }
+.cr-demo p { font-size: 10.5px; color: var(--mut); line-height: 1.4; }
+.cr-demo p button { color: var(--acc); font-weight: 700; font-size: 10.5px; padding: 0; }
