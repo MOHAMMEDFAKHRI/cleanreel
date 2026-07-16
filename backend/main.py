@@ -791,6 +791,13 @@ def create_job(req: JobRequest, request: Request,
         if req.focus is not None:
             params["focus"] = (max(0.0, min(1.0, float(req.focus[0]))),
                                max(0.0, min(1.0, float(req.focus[1]))))
+    elif task == "captions":
+        # style passthrough for the standalone captions task (the guided UI's
+        # "Pick a look" — previously only the reel pipeline read these).
+        params["cap_style"] = (req.cap_style or "clean").lower()
+        params["cap_pos"] = (req.cap_pos or "bottom").lower()
+        params["cap_size"] = (req.cap_size or "m").lower()
+        params["cap_color"] = (req.cap_color or "white").lower()
     elif task == "reel":
         params["ratio"] = req.ratio
         params["fit"] = req.fit

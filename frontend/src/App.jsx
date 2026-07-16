@@ -7,6 +7,11 @@ import Working from './screens/Working.jsx'
 import PreviewScreen from './screens/PreviewScreen.jsx'
 import SignInSheet from './screens/SignInSheet.jsx'
 import Done from './screens/Done.jsx'
+import EnhanceScreen from './screens/EnhanceScreen.jsx'
+import ReframeScreen from './screens/ReframeScreen.jsx'
+import BlurScreen from './screens/BlurScreen.jsx'
+import CaptionsScreen, { LOOKS } from './screens/CaptionsScreen.jsx'
+import { TASK_META } from './taskMeta.js'
 import { upload, wake, prewarm, getRegions, createJob, jobStatus, absUrl } from './api.js'
 import { loadAuth, saveAuth, authHeaders, requestCode, submitCode, me } from './auth.js'
 import { initAnalytics, track, identify } from './analytics.js'
@@ -36,6 +41,10 @@ export default function App() {
   const [preview, setPreview] = useState(null)
   const [savePct, setSavePct] = useState(0)
   const [done, setDone] = useState(null)           // { downloadUrl, credits }
+  const [enhanceOpts, setEnhanceOpts] = useState({ denoise: true, sharpen: true, strength: 0.6, upscale: false })
+  const [reframeOpts, setReframeOpts] = useState({ ratio: '9:16', fit: 'crop', focus: null })
+  const [blurOpts, setBlurOpts] = useState({ faces: true, plates: true, style: 'blur' })
+  const [capOpts, setCapOpts] = useState({ look: 'bold' })
   const [email, setEmail] = useState(auth?.email || '')
   const [sheetErr, setSheetErr] = useState(null)
   const [sheetBusy, setSheetBusy] = useState(false)
@@ -89,41 +98,69 @@ export default function App() {
       track('regions_found', { n: regs.length, preselected: regs.filter(r => r.preselected).length, type: resp?.watermark_type })
       setRegions(regs)
       setSelected(new Set(regs.filter(r => r.preselected).map(r => r.id)))
-      setScreen('mark')
-      const found = regs.filter(r => r.preselected)
-      if (found.length) {
-        showToast(found.length > 1
-          ? `Found ${found.length} marks — already selected for you`
-          : `Found a ${found[0].kind === 'logo' ? 'logo' : 'watermark'} — already selected for you`)
+      const dest = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions' }[jobHint] || 'mark'
+      setScreen(dest)
+      if (dest === 'mark') {
+        const found = regs.filter(r => r.preselected)
+        if (found.length) {
+          showToast(found.length > 1
+            ? `Found ${found.length} marks — already selected for you`
+            : `Found a ${found[0].kind === 'logo' ? 'logo' : 'watermark'} — already selected for you`)
+        }
+      } else if (dest === 'blur') {
+        const n = regs.filter(r => r.kind === 'face' || r.kind === 'plate').length
+        if (n) showToast(`Found ${n} to hide — all hidden by default`)
       }
     }, wait)
   }, [showToast])
 
-  /** Shared job runner for preview + export. */
-  const runJob = useCallback(async (mode) => {
+  // which task is active = which decision screen launched the job
+  const activeTask = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions' }[job] || 'remove'
+
+  const buildBody = useCallback((mode) => {
+    const base = { file_id: video.fileId, mode, owns_rights: true }
+    if (activeTask === 'enhance') {
+      return { ...base, task: 'enhance', scale: enhanceOpts.upscale ? 2.0 : 1.0,
+               denoise: enhanceOpts.denoise, strength: enhanceOpts.sharpen ? enhanceOpts.strength : 0 }
+    }
+    if (activeTask === 'reframe') {
+      return { ...base, task: 'reframe', ratio: reframeOpts.ratio, fit: reframeOpts.fit, focus: reframeOpts.focus }
+    }
+    if (activeTask === 'blur') {
+      const targets = [blurOpts.faces && 'face', blurOpts.plates && 'plate'].filter(Boolean)
+      return { ...base, task: 'blur', targets: targets.length ? targets : ['face'], style: blurOpts.style, strength: 0.6 }
+    }
+    if (activeTask === 'captions') {
+      const look = LOOKS.find(l => l.id === capOpts.look) || LOOKS[0]
+      return { ...base, task: 'captions', ...look.params }
+    }
     const chosen = regions.filter(r => selected.has(r.id))
-    if (!chosen.length || !video) return
     const anyMark = chosen.some(r => r.kind === 'watermark' || r.kind === 'logo')
     const extra = chosen.filter(r => !(r.kind === 'watermark' || r.kind === 'logo'))
-    const body = {
-      file_id: video.fileId, mode, task: 'remove',
-      owns_rights: true, auto: anyMark,
-      boxes: extra.length ? extra.map(r => r.bbox) : null,
-    }
+    return { ...base, task: 'remove', auto: anyMark, boxes: extra.length ? extra.map(r => r.bbox) : null }
+  }, [activeTask, video, enhanceOpts, reframeOpts, blurOpts, capOpts, regions, selected])
+
+  /** Shared job runner for preview + export. */
+  const runJob = useCallback(async (mode) => {
+    if (!video) return
+    if (activeTask === 'remove' && !regions.filter(r => selected.has(r.id)).length) return
+    const body = buildBody(mode)
     const headers = mode === 'export' ? authHeaders(auth) : {}
     const r = await fetch((window.API_BASE || 'https://cleanreel.onrender.com') + '/api/jobs', {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
     })
     return { ok: r.ok, status: r.status, data: await r.json().catch(() => null) }
-  }, [regions, selected, video, auth])
+  }, [activeTask, buildBody, regions, selected, video, auth])
+
+  const decisionScreen = activeTask === 'remove' ? 'mark' : activeTask === 'captions' ? 'captions' : activeTask
 
   const startPreview = useCallback(async () => {
-    track('preview_click', { selections: selected.size })
+    track('preview_click', { task: activeTask, selections: selected.size })
     setWorkPct(0.02); setScreen('working')
     const res = await runJob('preview')
     if (!res?.ok || !res.data?.job_id) {
-      setScreen('mark'); showToast(res?.data?.detail || 'Could not start the preview — try again')
+      setScreen(decisionScreen); showToast(res?.data?.detail || 'Could not start the preview — try again')
       return
     }
     const id = res.data.job_id
@@ -134,17 +171,18 @@ export default function App() {
         setWorkPct(Math.max(0.02, s.progress || 0))
         if (s.status === 'done') {
           clearInterval(pollRef.current)
-          track('job_done', { mode: 'preview' })
-          setPreview({ resultUrl: absUrl(s.result_url), beforeUrl: absUrl(s.before_url), confidence: s.qc?.confidence ?? null })
+          track('job_done', { mode: 'preview', task: activeTask })
+          setPreview({ resultUrl: absUrl(s.result_url), beforeUrl: absUrl(s.before_url),
+                       srtUrl: absUrl(s.srt_url), confidence: s.qc?.confidence ?? null })
           setScreen('preview')
         } else if (s.status === 'failed') {
           clearInterval(pollRef.current)
-          track('job_error', { mode: 'preview' })
-          setScreen('mark'); showToast(s.message || 'That render failed — try again')
+          track('job_error', { mode: 'preview', task: activeTask })
+          setScreen(decisionScreen); showToast(s.message || 'That render failed — try again')
         }
       } catch { /* transient */ }
     }, 1500)
-  }, [runJob, selected, showToast])
+  }, [runJob, activeTask, decisionScreen, selected, showToast])
 
   const startExport = useCallback(async () => {
     setSheet('saving'); setSavePct(0.02)
@@ -236,11 +274,30 @@ export default function App() {
           onBack={reset} onPreview={startPreview} showToast={showToast}
         />
       )}
-      {screen === 'working' && <Working pct={workPct} />}
+      {screen === 'enhance' && video && (
+        <EnhanceScreen video={video} opts={enhanceOpts} setOpts={setEnhanceOpts} onBack={reset} onPreview={startPreview} />
+      )}
+      {screen === 'reframe' && video && (
+        <ReframeScreen video={video} opts={reframeOpts} setOpts={setReframeOpts} onBack={reset} onPreview={startPreview} />
+      )}
+      {screen === 'blur' && video && (
+        <BlurScreen video={video} regions={regions} opts={blurOpts} setOpts={setBlurOpts} onBack={reset} onPreview={startPreview} />
+      )}
+      {screen === 'captions' && video && (
+        <CaptionsScreen opts={capOpts} setOpts={setCapOpts} onBack={reset} onPreview={startPreview} />
+      )}
+      {screen === 'working' && (
+        <Working pct={workPct} title={TASK_META[activeTask].working.title} steps={TASK_META[activeTask].working.steps} />
+      )}
       {screen === 'preview' && preview && (
         <PreviewScreen
-          preview={preview} video={video} selectedLabels={selectedLabels}
-          onBack={() => setScreen('mark')} onSave={onSave}
+          preview={preview} video={video}
+          badgeWord={TASK_META[activeTask].badge(selectedLabels.length)}
+          chips={TASK_META[activeTask].chips(selectedLabels,
+            activeTask === 'enhance' ? enhanceOpts : activeTask === 'reframe' ? reframeOpts
+            : activeTask === 'blur' ? blurOpts : capOpts)}
+          showBefore={TASK_META[activeTask].showBefore}
+          onBack={() => setScreen(decisionScreen)} onSave={onSave}
         />
       )}
       {screen === 'done' && done && (

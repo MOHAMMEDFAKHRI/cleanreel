@@ -370,7 +370,11 @@ class JobManager:
             job.progress = 0.55
             job.message = f"Rendering captions ({len(segs)} lines)..."
             wr.caption_video(video, out, segs, preview=seconds,
-                             progress_cb=render_progress)
+                             progress_cb=render_progress,
+                             style=params.get("cap_style", "clean"),
+                             pos=params.get("cap_pos", "bottom"),
+                             size=params.get("cap_size", "m"),
+                             color=params.get("cap_color", "white"))
             job.result_path = out
             return
 

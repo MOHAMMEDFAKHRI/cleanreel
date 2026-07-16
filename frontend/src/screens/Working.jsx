@@ -1,15 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 
-const STEPS = [
-  { at: 0.12, label: 'Reading every frame' },
-  { at: 0.45, label: 'Recovering the real footage underneath' },
-  { at: 0.75, label: 'Cleaning leftover traces' },
-  { at: 0.94, label: 'Sharpness check on faces' },
-]
+const AT = [0.12, 0.45, 0.75, 0.94]
 
 /** Working screen (README §4): plain-language checklist driven by REAL job progress. */
-export default function Working({ pct }) {
+export default function Working({ pct, title, steps }) {
+  const STEPS = (steps || []).map((label, i) => ({ at: AT[i], label }))
   // rolling ETA from observed progress rate
   const [eta, setEta] = useState(null)
   const hist = useRef([])
@@ -27,7 +23,7 @@ export default function Working({ pct }) {
   return (
     <div className="cr-center" style={{ justifyContent: 'flex-start', paddingTop: 30 }}>
       <div className="cr-eyebrow">Working on it</div>
-      <h2 style={{ fontSize: 22 }}>Rebuilding what’s under the marks</h2>
+      <h2 style={{ fontSize: 22 }}>{title}</h2>
       <p className="sub">
         {eta != null ? `About ${eta} seconds left — this preview is free.` : 'This preview is free.'}
       </p>
