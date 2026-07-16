@@ -403,6 +403,10 @@ export default function App() {
         <Mark
           video={video} regions={regions} selected={selected} setSelected={setSelected}
           onAddRegion={(r) => { setRegions(rs => [...rs, r]); setSelected(sel => new Set(sel).add(r.id)) }}
+          onMergeSpots={(ids, r) => {
+            setRegions(rs => [...rs.filter(x => !ids.includes(x.id)), r])
+            setSelected(sel => { const n = new Set([...sel].filter(id => !ids.includes(id))); n.add(r.id); return n })
+          }}
           onBack={reset} onPreview={startPreview} showToast={showToast}
         />
       )}

@@ -8,8 +8,10 @@ import { frameUrl } from '../api.js'
  * canvas-still coordinates, and the still is rendered at its natural aspect,
  * so percentage positioning maps taps exactly.
  */
-export default function Mark({ video, regions, selected, setSelected, onAddRegion, onBack, onPreview, showToast }) {
+export default function Mark({ video, regions, selected, setSelected, onAddRegion, onMergeSpots, onBack, onPreview, showToast }) {
   const frameRef = useRef(null)
+  const dragRef = useRef(null)                 // {x0,y0,moved} in content coords
+  const [dragBox, setDragBox] = useState(null) // live rubber-band rect
   const [coachSeen, setCoachSeen] = useState(false)
   const [ripple, setRipple] = useState(null)   // {x,y,key} in % of frame
   const [lastAdd, setLastAdd] = useState(null) // region that drove the title change
@@ -39,13 +41,68 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
     setSelected(next)
   }
 
+  const toContent = (e) => {
+    const rect = frameRef.current.getBoundingClientRect()
+    const px = (e.clientX - rect.left) / rect.width
+    const py = (e.clientY - rect.top) / rect.height
+    return { px, py, x: px * W, y: py * H }
+  }
+
+  const addSpot = (bx, by, bw, bh) => {
+    // merge with any overlapping existing spots → ONE region, one chip
+    const overlaps = regions.filter(r => r.kind === 'spot' &&
+      bx < r.bbox[0] + r.bbox[2] && bx + bw > r.bbox[0] &&
+      by < r.bbox[1] + r.bbox[3] && by + bh > r.bbox[1])
+    let x0 = bx, y0 = by, x1 = bx + bw, y1 = by + bh
+    for (const r of overlaps) {
+      x0 = Math.min(x0, r.bbox[0]); y0 = Math.min(y0, r.bbox[1])
+      x1 = Math.max(x1, r.bbox[0] + r.bbox[2]); y1 = Math.max(y1, r.bbox[1] + r.bbox[3])
+    }
+    const n = regions.filter(r => r.kind === 'spot').length - overlaps.length + 1
+    const region = { id: `tap-${Date.now()}`, kind: 'spot',
+                     label: `Marked spot${n > 1 ? ' ' + n : ''}`,
+                     bbox: [Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0)],
+                     confidence: null, moving: false, preselected: false }
+    onMergeSpots(overlaps.map(r => r.id), region)
+    setCoachSeen(true)
+    showToast(overlaps.length ? 'Grew that spot' : 'Marked — we’ll clean that spot')
+  }
+
+  const onPointerDown = (e) => {
+    if (!frameRef.current) return
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    const c = toContent(e)
+    dragRef.current = { ...c, moved: false }
+  }
+  const onPointerMove = (e) => {
+    const d = dragRef.current
+    if (!d) return
+    const c = toContent(e)
+    if (Math.hypot(c.x - d.x, c.y - d.y) > 0.02 * Math.min(W, H)) d.moved = true
+    if (d.moved) setDragBox({ x0: Math.min(d.x, c.x), y0: Math.min(d.y, c.y),
+                              x1: Math.max(d.x, c.x), y1: Math.max(d.y, c.y) })
+  }
+  const onPointerUp = (e) => {
+    const d = dragRef.current
+    dragRef.current = null
+    if (!d) return
+    if (d.moved && dragBox) {
+      setDragBox(null)
+      const minSide = 0.05 * Math.min(W, H)
+      const bw = Math.max(minSide, dragBox.x1 - dragBox.x0)
+      const bh = Math.max(minSide, dragBox.y1 - dragBox.y0)
+      addSpot(Math.max(0, Math.min(W - bw, dragBox.x0)),
+              Math.max(0, Math.min(H - bh, dragBox.y0)), bw, bh)
+      return
+    }
+    setDragBox(null)
+    onFrameClick(e)
+  }
+
   const onFrameClick = (e) => {
     const el = frameRef.current
     if (!el) return
-    const rect = el.getBoundingClientRect()
-    const px = (e.clientX - rect.left) / rect.width
-    const py = (e.clientY - rect.top) / rect.height
-    const x = px * W, y = py * H
+    const { px, py, x, y } = toContent(e)
     // smallest region containing the point wins (nested boxes)
     const hit = regions
       .filter(r => !r.whole)   // the whole-frame pattern is chip-managed — taps pass through
@@ -55,14 +112,9 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
     // nothing detected here — the user knows better: mark the spot manually.
     // 'spot' regions flow to the render as boxes → the GPU inpaint handles them.
     const side = Math.round(0.16 * Math.min(W, H))
-    const bx = Math.max(0, Math.min(W - side, Math.round(x - side / 2)))
-    const by = Math.max(0, Math.min(H - side, Math.round(y - side / 2)))
-    const n = regions.filter(r => r.kind === 'spot').length + 1
-    onAddRegion({ id: `tap-${Date.now()}`, kind: 'spot', label: `Marked spot${n > 1 ? ' ' + n : ''}`,
-                  bbox: [bx, by, side, side], confidence: null, moving: false, preselected: false })
-    setCoachSeen(true)
+    addSpot(Math.max(0, Math.min(W - side, Math.round(x - side / 2))),
+            Math.max(0, Math.min(H - side, Math.round(y - side / 2))), side, side)
     setRipple({ x: px * 100, y: py * 100, key: Date.now() })
-    showToast('Marked — we’ll clean that spot')
   }
 
   const ctaLabel = selCount === 0 ? 'Select something to remove'
@@ -80,7 +132,11 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
       <p className="cr-sub">{sub}</p>
 
       <div className="cr-markframe">
-        <div ref={frameRef} className="cr-markinner" onClick={onFrameClick}>
+        <div
+          ref={frameRef} className="cr-markinner"
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+          style={{ touchAction: 'none' }}
+        >
         <img src={frameUrl(video.fileId)} alt="" draggable={false} />
         {regions.map(r => {
           const on = selected.has(r.id)
@@ -106,6 +162,12 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
             </div>
           )
         })}
+        {dragBox && (
+          <div className="cr-region sel" style={{
+            left: `${(dragBox.x0 / W) * 100}%`, top: `${(dragBox.y0 / H) * 100}%`,
+            width: `${((dragBox.x1 - dragBox.x0) / W) * 100}%`, height: `${((dragBox.y1 - dragBox.y0) / H) * 100}%`,
+          }} />
+        )}
         {ripple && <span key={ripple.key} className="cr-ripple" style={{ left: `${ripple.x}%`, top: `${ripple.y}%` }} />}
         {!coachSeen && regions.length > 0 && <span className="cr-coach">tap anything you want gone</span>}
         </div>
@@ -124,7 +186,7 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
         {ctaLabel}
       </button>
       <p className="cr-hint">
-        Only selected things are touched. Faces stay sharp. Tapped wrong? Tap it again.
+        Tap anything you want gone — or drag a box over it. Tapped wrong? Tap it again.
       </p>
       <p className="cr-hint faint">
         Previewing confirms this is a video you own or are licensed to edit.
