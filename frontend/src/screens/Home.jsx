@@ -1,6 +1,13 @@
 import React, { useRef, useState } from 'react'
 import { ArrowUp, Droplet, Eraser, Sparkles, Smartphone, EyeOff, MessageSquare, Clapperboard } from 'lucide-react'
 import Demos from './Demos.jsx'
+import { caps, tierOf } from '../api.js'
+
+function capLine(hint) {
+  const c = caps[tierOf(hint)]
+  const t = c.seconds >= 120 ? `Up to ${Math.round(c.seconds / 60)} min` : `Up to ${c.seconds}s`
+  return `${t} for this job`
+}
 
 const JOBS = [
   { id: 'remove',  Icon: Droplet,       title: 'Take a mark off my video', desc: 'Logos, watermarks, text' },
@@ -60,7 +67,7 @@ export default function Home({ uploading, onFile, hint, onHint }) {
           <>
             <div className="tile"><ArrowUp size={24} strokeWidth={2.4} /></div>
             <div className="t1">Add your video</div>
-            <div className="t2">Up to 60s · deleted after 6 hours</div>
+            <div className="t2">{capLine(hint)} · deleted after 6 hours</div>
           </>
         )}
       </button>

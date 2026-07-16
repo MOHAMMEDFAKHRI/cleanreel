@@ -46,6 +46,26 @@ MAX_UPLOAD_SECONDS = MAX_EXPORT_SECONDS   # cleanup modes: upload == export, so 
 # the user selects (enforced at job submit against MAX_REEL_OUTPUT_SECONDS).
 MAX_REEL_UPLOAD_MB      = int(os.environ.get("MAX_REEL_UPLOAD_MB", "2048"))   # 2 GB
 MAX_REEL_UPLOAD_SECONDS = int(os.environ.get("MAX_REEL_UPLOAD_SECONDS", "900"))   # 15 min
+
+# CPU-only pipelines (blur / reframe / captions) don't touch the GPU, so their
+# uploads — and exports — can be far more generous than the inpaint tier.
+# Captions especially: long talking videos are its natural use, and the free
+# .srt on a long upload is cheap lead-gen (text out, no GPU, no big egress).
+MAX_CPU_UPLOAD_MB      = int(os.environ.get("MAX_CPU_UPLOAD_MB", "500"))
+MAX_CPU_UPLOAD_SECONDS = int(os.environ.get("MAX_CPU_UPLOAD_SECONDS", "300"))  # 5 min
+MAX_CPU_EXPORT_SECONDS = int(os.environ.get("MAX_CPU_EXPORT_SECONDS",
+                                            str(MAX_CPU_UPLOAD_SECONDS)))
+_TIER_CAPS = {  # tier -> (seconds, MB)
+    "gpu":  (MAX_UPLOAD_SECONDS, MAX_UPLOAD_MB),
+    "cpu":  (MAX_CPU_UPLOAD_SECONDS, MAX_CPU_UPLOAD_MB),
+    "reel": (MAX_REEL_UPLOAD_SECONDS, MAX_REEL_UPLOAD_MB),
+}
+_UPLOAD_TIER = {  # accepted `intent` values -> tier ('clean' kept for old clients)
+    "clean": "gpu", "remove": "gpu", "erase": "gpu", "enhance": "gpu",
+    "blur": "cpu", "reframe": "cpu", "captions": "cpu", "caption": "cpu", "cpu": "cpu",
+    "reel": "reel",
+}
+_CPU_TASKS = ("blur", "reframe", "captions")
 # NOTE: the reel *output* cap (MAX_REEL_OUTPUT_SECONDS) is enforced at job submit.
 
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET_KEY")
@@ -135,7 +155,10 @@ def health():
             "max_upload_mb": MAX_UPLOAD_MB,   # cleanup-mode (remove/erase/etc.) cap; lets the client size-check before uploading
             "max_reel_upload_seconds": MAX_REEL_UPLOAD_SECONDS,
             "max_reel_upload_mb": MAX_REEL_UPLOAD_MB,
-            "max_reel_output_seconds": MAX_REEL_OUTPUT_SECONDS}
+            "max_reel_output_seconds": MAX_REEL_OUTPUT_SECONDS,
+            # per-mode upload tiers, so clients can show honest caps up front
+            "tiers": {t: {"seconds": s, "mb": mb} for t, (s, mb) in _TIER_CAPS.items()},
+            "cpu_tasks": list(_CPU_TASKS)}
 
 # ---- predictive GPU pre-warm -------------------------------------------------
 # The LaMa / Enhance Modal apps scale to zero, so the FIRST preview after an idle
@@ -318,11 +341,13 @@ def file_exists(file_id: str):
 @app.post("/api/upload")
 async def upload(request: Request, file: UploadFile = File(...), intent: str = "clean"):
     rate_limit(request, "upload", RATE_UPLOAD_PER_HOUR)
-    # 'reel' intent samples from long source footage, so it gets the bigger caps;
-    # every other flow keeps the tight 60s / 200 MB cleanup-tier limits.
-    reel = (intent or "").strip().lower() == "reel"
-    max_mb = MAX_REEL_UPLOAD_MB if reel else MAX_UPLOAD_MB
-    max_secs = MAX_REEL_UPLOAD_SECONDS if reel else MAX_UPLOAD_SECONDS
+    # Per-mode upload tiers (intent = task name or tier):
+    #   gpu  (remove/erase/enhance) — every frame hits the GPU, keep it tight
+    #   cpu  (blur/reframe/captions) — ffmpeg/YuNet/whisper only, be generous
+    #   reel — samples from long source footage, biggest caps
+    tier = _UPLOAD_TIER.get((intent or "").strip().lower(), "gpu")
+    max_secs, max_mb = _TIER_CAPS[tier]
+    reel = tier == "reel"
     ext = os.path.splitext(file.filename or "")[1].lower() or ".mp4"
     if ext not in (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"):
         raise HTTPException(400, "Unsupported video format.")
@@ -348,10 +373,10 @@ async def upload(request: Request, file: UploadFile = File(...), intent: str = "
     seconds = round(n / max(fps, 1), 1)
     if seconds > max_secs:
         os.remove(path)
-        tail = "for reels" if reel else "in this tier"
+        tail = "for reels" if reel else "for this job"
         raise HTTPException(413, f"That clip is {seconds:.0f}s — the limit is {max_secs}s per video {tail}. Trim it and try again.")
     FILES[fid] = {"path": path, "w": w, "h": h, "seconds": seconds, "fps": fps,
-                  "intent": "reel" if reel else "clean"}
+                  "intent": "reel" if reel else "clean", "tier": tier}
     return {"file_id": fid, "width": w, "height": h, "seconds": seconds}
 
 
@@ -737,8 +762,10 @@ def create_job(req: JobRequest, request: Request,
             # Reels are capped by the *selected* footage, not the source length.
             if reel_out_seconds is not None and reel_out_seconds > MAX_REEL_OUTPUT_SECONDS + 0.5:
                 raise HTTPException(413, f"Reel export limited to {MAX_REEL_OUTPUT_SECONDS}s of selected footage in this tier.")
-        elif meta["seconds"] > MAX_EXPORT_SECONDS:
-            raise HTTPException(413, f"Export limited to {MAX_EXPORT_SECONDS}s in this tier.")
+        else:
+            export_cap = MAX_CPU_EXPORT_SECONDS if task in _CPU_TASKS else MAX_EXPORT_SECONDS
+            if meta["seconds"] > export_cap:
+                raise HTTPException(413, f"Export limited to {export_cap}s for this job.")
         email = current_user(authorization)
         if not email:
             raise HTTPException(401, "Please sign in to export.")

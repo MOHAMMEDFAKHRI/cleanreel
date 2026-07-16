@@ -106,7 +106,7 @@ export default function App() {
     let res = null
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
       try {
-        res = await upload(file, { intent: jobHint === 'reel' ? 'reel' : undefined, onProgress: (pct) => setUp({ name: file.name, pct }) })
+        res = await upload(file, { intent: jobHint || 'clean', onProgress: (pct) => setUp({ name: file.name, pct }) })
       } catch {
         if (attempt === 0) { showToast('Hiccup while uploading — retrying…'); setUp({ name: file.name, pct: 0 }) }
       }

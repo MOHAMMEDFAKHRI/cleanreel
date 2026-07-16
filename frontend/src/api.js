@@ -2,9 +2,24 @@
 // window.API_BASE comes from /config.js at the site root; fallback for local dev.
 export const API = (typeof window !== 'undefined' && window.API_BASE) || 'https://cleanreel.onrender.com'
 
-/** Fire-and-forget server wake (Render naps between visits). */
+/** Per-mode upload caps, refreshed from /api/health (safe fallbacks first). */
+export const caps = {
+  gpu: { seconds: 60, mb: 200 },
+  cpu: { seconds: 300, mb: 500 },
+  reel: { seconds: 900, mb: 2048 },
+}
+export const tierOf = (job) =>
+  job === 'reel' ? 'reel'
+  : (job === 'blur' || job === 'reframe' || job === 'caption') ? 'cpu' : 'gpu'
+
+/** Server wake (Render naps between visits) — also refreshes the caps table. */
 export function wake() {
-  try { fetch(API + '/api/health', { cache: 'no-store' }).catch(() => {}) } catch { /* noop */ }
+  try {
+    fetch(API + '/api/health', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => { if (d?.tiers) Object.assign(caps, d.tiers) })
+      .catch(() => {})
+  } catch { /* noop */ }
 }
 
 /** Predictive GPU pre-warm once a video is in (same trick as the live UI). */
