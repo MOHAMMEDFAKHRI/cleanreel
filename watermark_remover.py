@@ -1588,6 +1588,14 @@ def _detect_boxes(gray, targets):
                 for (x, y, bw, bh) in det:
                     if pi:                       # mirrored pass -> unmirror the box
                         x = gw - int(x) - int(bw)
+                    # CLE-57: the plate cascade fires on ANY text-like texture
+                    # (printed labels, captions). Real plates are short, wide
+                    # and a modest fraction of the frame — gate to that shape.
+                    if t == "plate":
+                        ar = bw / max(float(bh), 1e-6)
+                        if not (1.8 <= ar <= 6.5): continue
+                        if not (0.03 * gw <= bw <= 0.35 * gw): continue
+                        if bh > 0.12 * gh: continue
                     out.append((int(x), int(y), int(bw), int(bh)))
     return out
 
@@ -1622,9 +1630,13 @@ class _RegionTracker:
     center distance, track geometry is EMA-damped, a track is HELD for `hold`
     frames after its detector drops out (Haar flickers; faces turn), and the
     reported boxes are expanded by `expand` so edges/ears stay covered."""
-    def __init__(self, hold=12, ema=0.35, expand=0.18):
-        self.tracks = []                 # dicts: cx, cy, w, h, ttl
+    def __init__(self, hold=12, ema=0.35, expand=0.18, min_hits=3):
+        # min_hits (CLE-57): a track must be re-detected in this many frames
+        # before it starts blurring — one-frame false positives (texture,
+        # printed text) never fire, while real faces confirm in ~0.1s.
+        self.tracks = []                 # dicts: cx, cy, w, h, ttl, hits
         self.hold = max(1, int(hold)); self.ema = float(ema); self.expand = float(expand)
+        self.min_hits = max(1, int(min_hits))
 
     def update(self, det):
         fresh = [[x + bw / 2.0, y + bh / 2.0, float(bw), float(bh)]
@@ -1643,17 +1655,23 @@ class _RegionTracker:
                 t["cx"] += a * (f[0] - t["cx"]); t["cy"] += a * (f[1] - t["cy"])
                 t["w"] += a * (f[2] - t["w"]);   t["h"] += a * (f[3] - t["h"])
                 t["ttl"] = self.hold
+                t["hits"] = min(t.get("hits", 1) + 1, self.min_hits)
             else:
                 t["ttl"] -= 1                    # briefly lost: keep blurring its spot
+                if t.get("hits", 1) < self.min_hits:
+                    t["ttl"] = 0                 # unconfirmed + lost -> drop instantly
         self.tracks = [t for t in self.tracks if t["ttl"] > 0]
         for j, f in enumerate(fresh):
             if not used[j]:
-                self.tracks.append(dict(cx=f[0], cy=f[1], w=f[2], h=f[3], ttl=self.hold))
+                self.tracks.append(dict(cx=f[0], cy=f[1], w=f[2], h=f[3],
+                                        ttl=self.hold, hits=1))
         return self.boxes()
 
     def boxes(self):
         out = []
         for t in self.tracks:
+            if t.get("hits", 1) < self.min_hits:   # probation: not blurred yet
+                continue
             bw = t["w"] * (1.0 + self.expand); bh = t["h"] * (1.0 + self.expand)
             out.append((t["cx"] - bw / 2.0, t["cy"] - bh / 2.0, bw, bh))
         return out
@@ -1771,10 +1789,13 @@ def blur_video(path, out, targets=("face",), style="blur", strength=0.6,
     tmp = tempfile.mkdtemp(); raw = os.path.join(tmp, "v.mp4")
     enc = Encoder(w, h, fps, raw, upscale=target, sharpen=False)
     total = limit or n
+    hidden_frames = 0                    # CLE-57: honest reporting to the UI
     for k, f in enumerate(frames_iter(path, limit)):
         if tracker is not None:
-            _obscure_boxes(f, tracker.update(detect_privacy_boxes(f, targets)),
-                           style, strength)
+            bx = tracker.update(detect_privacy_boxes(f, targets))
+            if bx:
+                hidden_frames += 1
+            _obscure_boxes(f, bx, style, strength)
         if man_mask is not None:
             if trk is not None:
                 # moving manual region: tracked (multi-scale, gated). Privacy
@@ -1783,15 +1804,18 @@ def blur_video(path, out, targets=("face",), style="blur", strength=0.6,
                 eff, rect = _track_mask(trk, f, on_lost="hold")
                 if eff is not None:
                     _obscure_masked(f, eff, style, strength, rect=rect)
+                    hidden_frames += 1
             else:
                 _obscure_masked(f, man_mask, style, strength, rect=man_rect)
+                hidden_frames += 1
         enc.write(f)
         if progress_cb and total and k % 10 == 0:
             progress_cb(k + 1, total)
         if k % 50 == 0:
             print(f"  frame {k+1}/{total or '?'}", flush=True)
     enc.close(); mux_audio(raw, path, out); shutil.rmtree(tmp, ignore_errors=True)
-    print(f"done -> {out}")
+    print(f"done -> {out}  (hidden on {hidden_frames}/{total or '?'} frames)")
+    return {"hidden_frames": int(hidden_frames), "frames": int(total or 0)}
 
 
 # --------------------------------------------------------------------------- #

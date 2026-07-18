@@ -535,12 +535,14 @@ class JobManager:
             job.message = (f"Finding and blurring {names}..." if targets
                            else "Blurring your marked region...")
             # No watermark analysis needed — blur is detection + obscuring only.
-            wr.blur_video(video, out, targets=tuple(targets), style=style,
-                          strength=strength, mask01=mask,
-                          track=bool(params.get("track")) and mask is not None,
-                          track_ref=params.get("track_ref"), preview=seconds,
-                          max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
-                          progress_cb=render_progress)
+            stats = wr.blur_video(video, out, targets=tuple(targets), style=style,
+                                  strength=strength, mask01=mask,
+                                  track=bool(params.get("track")) and mask is not None,
+                                  track_ref=params.get("track_ref"), preview=seconds,
+                                  max_dim=int(os.environ.get("WR_MAX_DIM", "1366")),
+                                  progress_cb=render_progress)
+            if isinstance(stats, dict):
+                job.qc = stats           # CLE-57: honest chips need real counts
             job.result_path = out
             return
 

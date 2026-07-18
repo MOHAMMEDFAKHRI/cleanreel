@@ -245,7 +245,7 @@ export default function App() {
           clearInterval(pollRef.current)
           track('job_done', { mode: 'preview', task: activeTask })
           setPreview({ resultUrl: absUrl(s.result_url), beforeUrl: absUrl(s.before_url),
-                       srtUrl: absUrl(s.srt_url), confidence: s.qc?.confidence ?? null })
+                       srtUrl: absUrl(s.srt_url), confidence: s.qc?.confidence ?? null, qc: s.qc ?? null })
           setScreen('preview')
         } else if (s.status === 'failed' || s.status === 'error') {
           clearInterval(pollRef.current)
@@ -445,10 +445,10 @@ export default function App() {
       {screen === 'preview' && preview && (
         <PreviewScreen
           preview={preview} video={video}
-          badgeWord={TASK_META[activeTask].badge(selectedLabels.length)}
+          badgeWord={TASK_META[activeTask].badge(selectedLabels.length, preview.qc)}
           chips={TASK_META[activeTask].chips(selectedLabels,
             activeTask === 'enhance' ? enhanceOpts : activeTask === 'reframe' ? reframeOpts
-            : activeTask === 'blur' ? blurOpts : capOpts)}
+            : activeTask === 'blur' ? blurOpts : capOpts, preview.qc)}
           showBefore={TASK_META[activeTask].showBefore}
           onBack={() => setScreen(decisionScreen)} onSave={onSave}
           onFineTune={activeTask === 'reel' ? () => setScreen('finetune') : null}

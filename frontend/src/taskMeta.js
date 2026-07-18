@@ -26,8 +26,11 @@ export const TASK_META = {
   },
   blur: {
     working: { title: 'Hiding faces & plates', steps: ['Reading every frame', 'Finding faces & plates', 'Hiding them smoothly', 'Double-checking every frame'] },
-    badge: () => 'Hidden',
-    chips: (_, opts) => [opts.faces && 'Faces hidden', opts.plates && 'Plates hidden', opts.style === 'pixelate' ? 'Pixelated' : 'Soft blur'].filter(Boolean),
+    badge: (_, qc) => (qc && qc.hidden_frames === 0 ? 'Nothing to hide' : 'Hidden'),
+    chips: (_, opts, qc) => {
+      if (qc && qc.hidden_frames === 0) return ['Checked every frame — nothing needed hiding']
+      return [opts.faces && 'Faces hidden', opts.plates && 'Plates hidden', opts.style === 'pixelate' ? 'Pixelated' : 'Soft blur'].filter(Boolean)
+    },
     showBefore: true,
   },
   reel: {
