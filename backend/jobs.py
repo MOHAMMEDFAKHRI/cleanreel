@@ -748,7 +748,8 @@ class JobManager:
                 qc_limit = int(seconds * fps) if seconds else int(min(n, 8 * fps))
                 tuned_info, tuned_mask, qc = wr.autotune(
                     video, info, mask, _inpainter(),
-                    protect=protect, k=4, limit=qc_limit)
+                    protect=protect, k=4, limit=qc_limit,
+                    shield_faces=protect)   # CLE-55: QC mirrors the render
                 info, mask = tuned_info, tuned_mask
                 job.qc = qc
                 conf = int(round(qc.get("confidence", 0) * 100))
@@ -778,5 +779,8 @@ class JobManager:
         wr.process_video(video, out, info, mask, _inpainter(),
                          preview=seconds, upscale=up, sharpen=True,
                          protect_subject=protect, track=trk,
-                         progress_cb=render_progress)
+                         progress_cb=render_progress,
+                         # CLE-55: remove never repaints faces; erase stays
+                         # untouched — users may erase a person deliberately.
+                         shield_faces=(task == "remove" and protect))
         job.result_path = out

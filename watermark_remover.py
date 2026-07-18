@@ -1867,7 +1867,8 @@ def process_image(path, out, mask01, inp):
     print(f"done -> {out}")
 
 def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
-                  sharpen=True, protect_subject=True, track=None, progress_cb=None):
+                  sharpen=True, protect_subject=True, track=None, progress_cb=None,
+                  shield_faces=False):
     w, h, fps, n = probe(path)
     limit = int(preview * fps) if preview else None
     B = info.get("B"); meanf = info.get("meanf"); gain = info.get("gain", 0.0); C = 245.0
@@ -1957,7 +1958,9 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
                 print(f"  frame {written}/{total}", flush=True)
         buf.clear()
 
+    _fs_cache = [None]; _fidx = -1                     # CLE-55 face-shield cache
     for f in frames_iter(path, limit):
+        _fidx += 1
         # (1) reverse-blend the diffuse periodic layer out of the whole frame
         if B is not None:
             O = f.astype(np.float32); r = np.clip((C-O)/(C-meanf+1e-3), 0, 3.0)
@@ -1979,6 +1982,14 @@ def process_video(path, out, info, mask01, inp, preview=None, upscale=None,
             if protect_subject and eff is not None and B is not None:
                 gg = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
                 eff = mask_bin & (_flatness(gg, KW) < TAU).astype(np.uint8)
+            if eff is not None and shield_faces:
+                # CLE-55: faces are never repainted by the remove-inpaint.
+                # Re-detect every few frames (faces move slowly vs fps; the
+                # expanded boxes cover the gap between refreshes).
+                if _fidx % 6 == 0:
+                    _fs_cache[0] = _face_shield(f)
+                if _fs_cache[0] is not None:
+                    eff = eff & (1 - _fs_cache[0])
             if eff is not None:
                 eff = cv2.dilate(eff, np.ones((3, 3), np.uint8))
         # (3) plan the inpaint; a whole chunk's crops go to the GPU together
@@ -1999,7 +2010,24 @@ def _hp_gray(bgr, sigma=6.0):
                      cv2.COLOR_BGR2GRAY).astype(np.float32)
     return g - cv2.GaussianBlur(g, (0, 0), sigma)
 
-def _clean_frame_static(f, B, meanf, gain, mask_bin, inp, protect=True):
+def _face_shield(frame, expand=0.25):
+    """CLE-55: uint8 mask of detected faces (boxes expanded by `expand`) — the
+    region the remove-inpaint must NEVER repaint. None when no faces."""
+    h, w = frame.shape[:2]
+    boxes = detect_privacy_boxes(frame, ["face"])
+    if not boxes:
+        return None
+    m = np.zeros((h, w), np.uint8)
+    for (x, y, bw, bh) in boxes:
+        px, py = bw * expand, bh * expand
+        x0 = max(0, int(x - px)); y0 = max(0, int(y - py))
+        x1 = min(w, int(x + bw + px)); y1 = min(h, int(y + bh + py))
+        m[y0:y1, x0:x1] = 1
+    return m
+
+
+def _clean_frame_static(f, B, meanf, gain, mask_bin, inp, protect=True,
+                        shield_faces=False):
     """Clean ONE frame with the same static-mark logic as process_video (reverse-
     blend the diffuse layer, gate to flat pixels to protect the subject, ROI inpaint)."""
     h, w = f.shape[:2]
@@ -2011,6 +2039,10 @@ def _clean_frame_static(f, B, meanf, gain, mask_bin, inp, protect=True):
     if eff is not None and protect and B is not None:   # gate only when reverse-blending; opaque -> full inpaint
         gg = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
         eff = mask_bin & (_flatness(gg, KW) < TAU).astype(np.uint8)
+    if eff is not None and shield_faces:                 # CLE-55: never repaint faces
+        fs = _face_shield(f)
+        if fs is not None:
+            eff = eff & (1 - fs)
     if eff is not None:
         eff = cv2.dilate(eff, np.ones((3, 3), np.uint8))
     return _inpaint_smart(inp, f, eff)
@@ -2083,26 +2115,60 @@ def _score_clean(orig, cleaned, mask_bin, B):
     damage = float(np.clip(0.7 * oversmooth + 0.3 * dcol, 0, 1))
     return float(np.clip(resid_red, -1, 1)), damage
 
-def quality_report(path, info, mask_bin, inp, gain=None, protect=True, k=4, limit=None):
+def quality_report(path, info, mask_bin, inp, gain=None, protect=True, k=4, limit=None,
+                   shield_faces=False):
     """Clean k sampled frames with the given params and average the QC scores.
-    Returns dict(residual_reduction, damage, confidence, samples)."""
+    Returns dict(residual_reduction, damage, confidence, samples, ...).
+
+    CLE-56: confidence used to reward ONLY in-mask flattening — repainting a
+    face *improved* the score, and ghost marks outside the tuned mask never
+    counted. Two extra multiplicative penalties fix that:
+      face_damage   mean |before-after| inside detected faces (faces should be
+                    ~untouched by remove; only the subtractive un-blend and
+                    codec noise may move them a few grey levels)
+      residue_kept  the B-structure projection measured over the WHOLE frame,
+                    not just the mask — surviving ghost bands keep it high"""
     B = info.get("B"); meanf = info.get("meanf")
     if gain is None:
         gain = info.get("gain", 0.0)
     frames = _sample_frames(path, k, limit)
     if not frames:
         return dict(residual_reduction=0.0, damage=1.0, confidence=0.0, samples=0)
-    rr, dm = [], []
+    rr, dm, fd, rk = [], [], [], []
     for f in frames:
-        cleaned = _clean_frame_static(f.copy(), B, meanf, gain, mask_bin, inp, protect)
+        cleaned = _clean_frame_static(f.copy(), B, meanf, gain, mask_bin, inp,
+                                      protect, shield_faces=shield_faces)
         r, d = _score_clean(f, cleaned, mask_bin, B)
         rr.append(r); dm.append(d)
+        fs = _face_shield(f, expand=0.05)
+        if fs is not None and fs.sum() > 64:
+            m = fs > 0
+            fd.append(float(np.abs(cleaned.astype(np.float32) - f.astype(np.float32))[m].mean()))
+        if B is not None:
+            bg = B.mean(2).astype(np.float32)
+            bhp = bg - cv2.GaussianBlur(bg, (0, 0), 6.0)
+            sup = np.abs(bhp) > 1.0                      # wherever B has structure
+            if sup.sum() > 64:
+                u = bhp[sup] / (float(np.linalg.norm(bhp[sup])) + 1e-6)
+                before = abs(float((_hp_gray(f)[sup] * u).sum()))
+                after = abs(float((_hp_gray(cleaned)[sup] * u).sum()))
+                if before > 1e-3:
+                    rk.append(min(1.0, after / before))
     resid = float(np.mean(rr)); damage = float(np.mean(dm))
-    confidence = float(np.clip(resid, 0, 1) * (1.0 - np.clip(damage, 0, 1)))
+    face_damage = float(np.mean(fd)) if fd else 0.0
+    residue_kept = float(np.mean(rk)) if rk else 0.0
+    # ~5 grey levels of face movement is legitimate (un-blend); 18+ = repaint
+    p_face = float(np.clip((face_damage - 5.0) / 13.0, 0, 1))
+    # keeping >15% of the frame-wide mark structure starts costing confidence
+    p_resid = float(np.clip((residue_kept - 0.15) / 0.5, 0, 1))
+    confidence = float(np.clip(resid, 0, 1) * (1.0 - np.clip(damage, 0, 1))
+                       * (1.0 - 0.8 * p_face) * (1.0 - 0.6 * p_resid))
     return dict(residual_reduction=round(resid, 3), damage=round(damage, 3),
+                face_damage=round(face_damage, 2), residue_kept=round(residue_kept, 3),
                 confidence=round(confidence, 3), samples=len(frames))
 
-def autotune(path, info, mask_bin, inp, protect=True, k=4, limit=None):
+def autotune(path, info, mask_bin, inp, protect=True, k=4, limit=None,
+             shield_faces=False):
     """Iteratively refine: try a small grid of reverse-blend strengths and mask
     dilations on sampled frames, keep the best-scoring combination. Returns
     (best_info, best_mask, qc_report). This is the automated 'reiterate on
@@ -2119,7 +2185,8 @@ def autotune(path, info, mask_bin, inp, protect=True, k=4, limit=None):
         for dl in dilations:
             m = mask_bin if dl == 0 else cv2.dilate(mask_bin, np.ones((dl * 2 + 1,) * 2, np.uint8))
             g = base_gain * gm
-            qc = quality_report(path, info, m, inp, gain=g, protect=protect, k=k, limit=limit)
+            qc = quality_report(path, info, m, inp, gain=g, protect=protect, k=k,
+                                limit=limit, shield_faces=shield_faces)
             cand = (qc["confidence"], qc["residual_reduction"], -qc["damage"])
             if best is None or cand > best[0]:
                 best = (cand, g, m, qc)
