@@ -713,7 +713,22 @@ class JobManager:
                                               params.get("meanf"), params.get("std_gray"))
                 mask = info["mask"]
             elif params.get("boxes"):
+                # CLE-32 find: the guided UI sends manual spot boxes ALONGSIDE
+                # auto-detection (the old studio never combined them). Boxes
+                # used to silently DISCARD the detection — the pattern stayed,
+                # QC scored only the boxes, and the UI's "pattern gone" chip
+                # lied. Honor auto: union the detected mask with the boxes and
+                # keep the detection's reverse-blend layer (B/gain).
                 mask = wr.mask_from_boxes(params["boxes"], h, w)
+                if params.get("auto", True):
+                    try:
+                        det = wr.detect(video)
+                    except Exception as e:
+                        print("[remove] auto-detect alongside boxes failed:", e)
+                        det = None
+                    if det is not None and det.get("mask") is not None:
+                        info = det
+                        mask = ((mask > 0) | (det["mask"] > 0)).astype(np.uint8)
             else:
                 info = wr.detect(video)
                 if info.get("mask") is None:

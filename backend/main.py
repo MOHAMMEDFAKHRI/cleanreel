@@ -784,6 +784,9 @@ def create_job(req: JobRequest, request: Request,
         "boxes": [tuple(b) for b in req.boxes] if req.boxes else None,
         "upscale": req.upscale, "protect": req.protect,
         "clean_audio": bool(req.clean_audio),
+        # remove: whether auto-detection should run IN ADDITION to any boxes
+        # (the guided UI sends both; boxes alone used to drop the detection)
+        "auto": bool(req.auto),
     }
     if refund_email:
         # If the render fails, jobs.JobManager._worker returns these credits.
