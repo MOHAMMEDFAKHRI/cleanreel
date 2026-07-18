@@ -234,7 +234,11 @@ class JobManager:
                     pass
             except Exception as e:
                 job.status = "error"; job.error = str(e)
-                job.message = "Failed"
+                # RuntimeErrors from the engine are written to be user-facing
+                # ("No speech detected…", "This clip has no audio…") — surface
+                # them instead of a blank "Failed" (CLE-32 R5 find).
+                job.message = (str(e)[:160] if isinstance(e, RuntimeError) and str(e)
+                               else "Failed")
                 traceback.print_exc()
                 # Paid export failed -> automatically give the credit back.
                 # create_job deducted it up-front and stamped the payer's email

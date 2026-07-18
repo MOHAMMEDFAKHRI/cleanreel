@@ -247,7 +247,7 @@ export default function App() {
           setPreview({ resultUrl: absUrl(s.result_url), beforeUrl: absUrl(s.before_url),
                        srtUrl: absUrl(s.srt_url), confidence: s.qc?.confidence ?? null })
           setScreen('preview')
-        } else if (s.status === 'failed') {
+        } else if (s.status === 'failed' || s.status === 'error') {
           clearInterval(pollRef.current)
           track('job_error', { mode: 'preview', task: activeTask })
           setScreen(decisionScreen); showToast(s.message || 'That render failed — try again')
@@ -287,7 +287,7 @@ export default function App() {
           setSheet(null)
           setDone({ downloadUrl: absUrl(s.result_url), credits: info && !info.expired ? info.credits : null })
           setScreen('done')
-        } else if (s.status === 'failed') {
+        } else if (s.status === 'failed' || s.status === 'error') {
           clearInterval(pollRef.current)
           track('job_error', { mode: 'export' })
           setSheet(null); showToast(s.message || 'The export failed — credits were refunded')
