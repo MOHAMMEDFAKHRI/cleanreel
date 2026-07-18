@@ -168,7 +168,7 @@ export default function App() {
   }, [showToast])
 
   // which task is active = which decision screen launched the job
-  const activeTask = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions', reel: 'reel' }[job] || 'remove'
+  const activeTask = { erase: 'erase', enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions', reel: 'reel' }[job] || 'remove'
 
   const buildBody = useCallback((mode) => {
     const base = { file_id: video.fileId, mode, owns_rights: true }
@@ -204,6 +204,11 @@ export default function App() {
     const chosen = regions.filter(r => selected.has(r.id))
     const anyMark = chosen.some(r => r.kind === 'watermark' || r.kind === 'logo')
     const extra = chosen.filter(r => !(r.kind === 'watermark' || r.kind === 'logo'))
+    if (activeTask === 'erase') {
+      // erase is its own engine path (motion probe + temporal ProPainter);
+      // it must NOT masquerade as remove (CLE-32 find)
+      return { ...base, task: 'erase', boxes: extra.length ? extra.map(r => r.bbox) : null }
+    }
     return { ...base, task: 'remove', auto: anyMark, boxes: extra.length ? extra.map(r => r.bbox) : null }
   }, [activeTask, video, enhanceOpts, reframeOpts, blurOpts, capOpts, reelOpts, regions, selected])
 

@@ -6,6 +6,12 @@ export const TASK_META = {
     chips: (labels) => [...new Set(labels.map(l => l.replace(/ \d+$/, '')))].map(l => `${l} gone`),
     showBefore: true,
   },
+  erase: {
+    working: { title: 'Erasing what you marked', steps: ['Reading every frame', 'Following the marked spots', 'Filling in real background', 'Double-checking the result'] },
+    badge: (n) => (n > 1 ? 'Both erased' : 'Erased'),
+    chips: (labels) => [...new Set(labels.map(l => l.replace(/ \d+$/, '')))].map(l => `${l} gone`),
+    showBefore: true,
+  },
   enhance: {
     working: { title: 'Making every frame sharper', steps: ['Reading every frame', 'Cleaning compression noise', 'Sharpening real detail', 'Keeping faces natural'] },
     badge: () => 'Enhanced',
