@@ -175,8 +175,12 @@ _PREWARM_GAP = float(os.environ.get("WR_PREWARM_MIN_GAP", "25"))   # skip re-war
 _PREWARM_TIMEOUT = float(os.environ.get("WR_PREWARM_TIMEOUT", "30"))
 _prewarm_last = {}
 _prewarm_lock = threading.Lock()
-_WARM_IMG  = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB+0lEQVR42u3TQQ0AAAjEMMD4WeeNBloJS9ZJCr4aCTAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAATAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAbAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHgWutKA31OlVM6AAAAAElFTkSuQmCC"
-_WARM_MASK = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB5Gfe6AAAAg0lEQVR42u3SgQ0AQAQEQb7/nunCS8w0cLIRAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGyT04O17KB3/QMEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+KEB2cABQAyZerMAAAAASUVORK5CYII="
+# Ops-check fix (19 Jul): the previous hand-rolled base64 PNGs were CORRUPT —
+# cv2 on Modal failed with "PNG input buffer is incomplete" and every warm call
+# returned HTTP 500 (GPU still booted, but the warm inference never ran). These
+# replacements are cv2.imencode round-trip verified: 16×16 gray + 16×16 mask.
+_WARM_IMG  = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAANElEQVQoFZXBAQEAAAABIJ433QZV5FHkUeRR5FHkUeRR5FHkUeRR5FHkUeRR5FHkUeRR5DH7UhgRpIrbBwAAAABJRU5ErkJggg=="
+_WARM_MASK = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAOElEQVQYGV3BwQ0AMAgAIW7/oa2Jv0I++eSTT9Y4IWuckDVOyBonZI0TssYJWeOErHFCPvnkk88DZhQIEVZQqYQAAAAASUVORK5CYII="
 
 def _prewarm_fire(kind, url, payload):
     t0 = time.time()
@@ -666,6 +670,14 @@ def create_job(req: JobRequest, request: Request,
     meta = FILES.get(req.file_id)
     if not meta:
         raise HTTPException(404, "Unknown file_id (upload first).")
+    # Ops-check 19 Jul: a deploy/restart wipes the ephemeral uploads disk, so a
+    # user who previews, walks away, and exports hours later hits a mid-render
+    # FileNotFoundError (paid export -> failure -> refund). Catch it HERE,
+    # before any credit is deducted, with a message the UI can act on.
+    if not os.path.exists(meta["path"]):
+        FILES.pop(req.file_id, None)
+        raise HTTPException(410, "Your upload has expired (the server restarted) "
+                                 "— please upload the video again.")
     if req.mode not in ("preview", "export"):
         raise HTTPException(400, "mode must be 'preview' or 'export'.")
     task = (req.task or "remove").lower()

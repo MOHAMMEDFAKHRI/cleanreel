@@ -232,6 +232,12 @@ export default function App() {
     setWorkPct(0.02); setScreen('working')
     const res = await runJob('preview')
     if (!res?.ok || !res.data?.job_id) {
+      if (res?.status === 410 || res?.status === 404) {
+        // upload expired / server restarted — the session is dead; restart cleanly
+        setUpErr({ message: res?.data?.detail || 'Your upload has expired — add the video again.', options: [] })
+        reset()
+        return
+      }
       setScreen(decisionScreen); showToast(res?.data?.detail || 'Could not start the preview — try again')
       return
     }
@@ -261,6 +267,12 @@ export default function App() {
     const res = await runJob('export')
     if (!res?.ok) {
       if (res?.status === 401) { setAuthBoth(null); setSheetErr(null); setSheet('email'); track('export_blocked_signin'); return }
+      if (res?.status === 410 || res?.status === 404) {
+        setSheet(null)
+        setUpErr({ message: res?.data?.detail || 'Your upload has expired — add the video again.', options: [] })
+        reset()
+        return
+      }
       if (res?.status === 402) {
         track('export_blocked_credits')
         try {
