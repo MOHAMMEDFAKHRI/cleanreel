@@ -4,7 +4,7 @@ import { Check } from 'lucide-react'
 const AT = [0.12, 0.45, 0.75, 0.94]
 
 /** Working screen (README §4): plain-language checklist driven by REAL job progress. */
-export default function Working({ pct, title, steps }) {
+export default function Working({ pct, title, steps, note }) {
   const STEPS = (steps || []).map((label, i) => ({ at: AT[i], label }))
   // rolling ETA from observed progress rate
   const [eta, setEta] = useState(null)
@@ -45,9 +45,7 @@ export default function Working({ pct, title, steps }) {
         })}
       </ul>
       <div className="cr-progress slim"><i style={{ width: `${Math.round(pct * 100)}%` }} /></div>
-      <p className="sub" style={{ fontSize: 12 }}>
-        Faces are protected the whole way — they’re never repainted.
-      </p>
+      {note && <p className="sub" style={{ fontSize: 12 }}>{note}</p>}
     </div>
   )
 }

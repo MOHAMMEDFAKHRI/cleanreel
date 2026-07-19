@@ -424,7 +424,7 @@ export default function App() {
             setRegions(rs => [...rs.filter(x => !ids.includes(x.id)), r])
             setSelected(sel => { const n = new Set([...sel].filter(id => !ids.includes(id))); n.add(r.id); return n })
           }}
-          onBack={reset} onPreview={startPreview} showToast={showToast}
+          onBack={reset} onPreview={startPreview} showToast={showToast} task={activeTask}
         />
       )}
       {screen === 'enhance' && video && (
@@ -452,7 +452,7 @@ export default function App() {
           onBack={() => setScreen('preview')} onRebuild={startPreview} />
       )}
       {screen === 'working' && (
-        <Working pct={workPct} title={TASK_META[activeTask].working.title} steps={TASK_META[activeTask].working.steps} />
+        <Working pct={workPct} title={TASK_META[activeTask].working.title} steps={TASK_META[activeTask].working.steps} note={TASK_META[activeTask].working.note} />
       )}
       {screen === 'preview' && preview && (
         <PreviewScreen

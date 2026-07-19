@@ -52,7 +52,7 @@ export default function PreviewScreen({ preview, video, badgeWord, chips, showBe
 
       <div className="cr-resultchips">
         {chips.map(l => <span key={l}><Check size={12} strokeWidth={3} /> {l}</span>)}
-        <span><Check size={12} strokeWidth={3} /> Audio kept</span>
+        <span><Check size={12} strokeWidth={3} /> Audio untouched</span>
       </div>
       {preview.srtUrl && (
         <p className="cr-hint"><a className="cr-srtlink" href={preview.srtUrl}>Download the .srt — free</a></p>

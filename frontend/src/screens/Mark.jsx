@@ -8,7 +8,7 @@ import { frameUrl } from '../api.js'
  * canvas-still coordinates, and the still is rendered at its natural aspect,
  * so percentage positioning maps taps exactly.
  */
-export default function Mark({ video, regions, selected, setSelected, onAddRegion, onMergeSpots, onBack, onPreview, showToast }) {
+export default function Mark({ video, regions, selected, setSelected, onAddRegion, onMergeSpots, onBack, onPreview, showToast, task = 'remove' }) {
   const frameRef = useRef(null)
   const dragRef = useRef(null)                 // {x0,y0,moved} in content coords
   const [dragBox, setDragBox] = useState(null) // live rubber-band rect
@@ -143,7 +143,7 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
           if (r.whole) {
             return on ? (
               <div key={r.id} className="cr-wholeframe">
-                <span className="cr-dettag" style={{ top: 8, bottom: 'auto' }}>✓ pattern selected — everywhere</span>
+                <span className="cr-dettag" style={{ top: 8, bottom: 'auto' }}>✓ repeating watermark — cleaned wherever it appears</span>
               </div>
             ) : null
           }
@@ -187,6 +187,9 @@ export default function Mark({ video, regions, selected, setSelected, onAddRegio
       </button>
       <p className="cr-hint">
         Tap anything you want gone — or drag a box over it. Tapped wrong? Tap it again.
+        {task === 'erase'
+          ? ' Only what you mark is touched — nothing else changes.'
+          : ' Faces are never repainted.'}
       </p>
       <p className="cr-hint faint">
         Previewing confirms this is a video you own or are licensed to edit.
