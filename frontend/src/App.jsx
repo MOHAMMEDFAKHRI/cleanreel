@@ -121,7 +121,7 @@ export default function App() {
       const detail = res.data?.detail || 'That upload didn’t work — try again.'
       // a clip too big/long for THIS job may fit a roomier tier — offer the switch
       const secs = res.status === 413 ? (detail.match(/is (\d+)s/) ? Number(detail.match(/is (\d+)s/)[1]) : null) : null
-      const fits = (t) => file.size <= (caps[t].mb << 20) && (secs == null || secs <= caps[t].seconds)
+      const fits = (t) => file.size <= caps[t].mb * 1048576 && (secs == null || secs <= caps[t].seconds)  // NOT <<20: 2048<<20 overflows int32
       const options = []
       const tier = tierOf(jobHint)
       if (res.status === 413 && tier === 'gpu' && fits('cpu'))
