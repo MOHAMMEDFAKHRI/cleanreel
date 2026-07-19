@@ -940,6 +940,39 @@ def _score_layer(path, B, region, meanf, n):
     return total / max(cnt, 1)
 
 
+def _lattice_motion_support(wm, lat, std_gray):
+    """CLE-60: verify a detected lattice is a real OVERLAY, not periodic
+    *content* (wall art, fabric print). A genuine tiled watermark is stamped
+    over everything — its temporally-consistent structure repeats at the
+    lattice period on MOVING regions too. Content periodicity only repeats
+    where that content sits (static background). We correlate the consistency
+    map with its lattice-shifted self and ask whether the periodic-evidence
+    support extends onto moving areas at a sane fraction of its overall
+    density. Clips with almost no motion can't be judged -> pass through.
+    Measured: real tiled clip ratio 0.85, content-periodicity analog 0.04."""
+    v1, v2 = lat[0], lat[1]
+    hp = wm - cv2.GaussianBlur(wm, (0, 0), 8)
+    sup = None
+    for v in (v1, v2):
+        sh = np.roll(hp, (int(round(v[0])), int(round(v[1]))), axis=(0, 1))
+        num = cv2.boxFilter(hp * sh, -1, (31, 31))
+        den = np.sqrt(np.clip(cv2.boxFilter(hp * hp, -1, (31, 31)) *
+                              cv2.boxFilter(sh * sh, -1, (31, 31)), 0, None)) + 1e-6
+        c = num / den
+        sup = c if sup is None else np.maximum(sup, c)
+    per = sup > 0.4
+    mov = std_gray > max(8.0, float(np.percentile(std_gray, 80)))
+    if float(mov.mean()) < 0.02 or float(per.mean()) < 1e-4:
+        return True                                  # not enough motion to judge
+    ratio = float(per[mov].mean()) / max(float(per.mean()), 1e-6)
+    if ratio < 0.15:
+        print(f"[engine] tiled rejected: periodic structure only on static "
+              f"content (motion-support ratio {ratio:.2f}) -> not an overlay",
+              flush=True)
+        return False
+    return True
+
+
 def detect(path):
     """Return dict(type, mask, B, meanf, gain). type in tiled|logo-soft|logo|none."""
     w, h, fps, n = probe(path)
@@ -956,7 +989,8 @@ def detect(path):
     wm = _watermark_gradient_map(path, segs, h, w)
 
     lat = _find_lattice(wm)
-    if lat and lat[2] > 0.10:                       # strong periodicity -> TILED
+    if lat and lat[2] > 0.10 and _lattice_motion_support(wm, lat, std_gray):
+        # strong periodicity confirmed as an OVERLAY (CLE-60 gate) -> TILED
         # CLE-45: two candidate overlay layers, keep whichever measurably
         # flattens the mark better. The lattice tile-average bleeds moving
         # background into B (and fails outright on offset/rhombic grids —
