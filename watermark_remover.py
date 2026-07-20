@@ -940,16 +940,25 @@ def _score_layer(path, B, region, meanf, n):
     return total / max(cnt, 1)
 
 
-def _lattice_motion_support(wm, lat, std_gray):
-    """CLE-60: verify a detected lattice is a real OVERLAY, not periodic
-    *content* (wall art, fabric print). A genuine tiled watermark is stamped
-    over everything — its temporally-consistent structure repeats at the
-    lattice period on MOVING regions too. Content periodicity only repeats
-    where that content sits (static background). We correlate the consistency
-    map with its lattice-shifted self and ask whether the periodic-evidence
-    support extends onto moving areas at a sane fraction of its overall
-    density. Clips with almost no motion can't be judged -> pass through.
-    Measured: real tiled clip ratio 0.85, content-periodicity analog 0.04."""
+def _lattice_overlay_valid(wm, lat, std_gray):
+    """CLE-60: verify a detected lattice is a real tiled OVERLAY before we
+    claim a whole-frame repeating watermark. Two independent false-positive
+    modes are rejected here, both measured on real footage:
+
+      1. COVERAGE — a genuine tiling stamps the mark across the whole frame,
+         so periodic self-similarity covers a large area. A single centred
+         mark (e.g. one Adobe-Stock logo) only weakly aliases into a lattice
+         and its periodic evidence is tiny. Measured per_all: genuine 0.14-0.27,
+         single-mark false positive 0.030 -> floor at 0.08.
+
+      2. MOTION — a genuine overlay sits on top of moving content too, so its
+         support lands on moving regions at a sane fraction of its overall
+         density. Periodic *content* (wall art, fabric print) repeats only on
+         static background. Measured ratio: genuine 0.72-0.85, content-
+         periodicity analog 0.04 -> floor at 0.15 (skipped if <2% motion).
+
+    We build the periodic-evidence support map by correlating the temporal
+    consistency map with its lattice-shifted self."""
     v1, v2 = lat[0], lat[1]
     hp = wm - cv2.GaussianBlur(wm, (0, 0), 8)
     sup = None
@@ -961,11 +970,16 @@ def _lattice_motion_support(wm, lat, std_gray):
         c = num / den
         sup = c if sup is None else np.maximum(sup, c)
     per = sup > 0.4
+    per_all = float(per.mean())
+    if per_all < 0.08:                               # (1) too sparse to be a tiling
+        print(f"[engine] tiled rejected: periodic support covers only "
+              f"{per_all:.3f} of frame -> single mark, not a tiling", flush=True)
+        return False
     mov = std_gray > max(8.0, float(np.percentile(std_gray, 80)))
-    if float(mov.mean()) < 0.02 or float(per.mean()) < 1e-4:
-        return True                                  # not enough motion to judge
-    ratio = float(per[mov].mean()) / max(float(per.mean()), 1e-6)
-    if ratio < 0.15:
+    if float(mov.mean()) < 0.02:
+        return True                                  # not enough motion to judge (2)
+    ratio = float(per[mov].mean()) / max(per_all, 1e-6)
+    if ratio < 0.15:                                 # (2) evidence avoids motion
         print(f"[engine] tiled rejected: periodic structure only on static "
               f"content (motion-support ratio {ratio:.2f}) -> not an overlay",
               flush=True)
@@ -989,7 +1003,7 @@ def detect(path):
     wm = _watermark_gradient_map(path, segs, h, w)
 
     lat = _find_lattice(wm)
-    if lat and lat[2] > 0.10 and _lattice_motion_support(wm, lat, std_gray):
+    if lat and lat[2] > 0.10 and _lattice_overlay_valid(wm, lat, std_gray):
         # strong periodicity confirmed as an OVERLAY (CLE-60 gate) -> TILED
         # CLE-45: two candidate overlay layers, keep whichever measurably
         # flattens the mark better. The lattice tile-average bleeds moving
