@@ -1,12 +1,14 @@
 import React, { useRef, useState } from 'react'
-import { ArrowUp } from 'lucide-react'
-import { caps, tierOf } from '../api.js'
+import { ArrowUp, Droplet, Eraser, Sparkles, Smartphone, EyeOff, MessageSquare } from 'lucide-react'
 
-function capLine(hint) {
-  const c = caps[tierOf(hint)]
-  const t = c.seconds >= 120 ? `Up to ${Math.round(c.seconds / 60)} min` : `Up to ${c.seconds}s`
-  return `${t} for this job`
-}
+const JOBS = [
+  { id: 'remove',  Icon: Droplet,       title: 'Take a mark off my video', desc: 'Logos, watermarks, text' },
+  { id: 'erase',   Icon: Eraser,        title: 'Erase something in the scene', desc: 'People, objects, clutter' },
+  { id: 'enhance', Icon: Sparkles,      title: 'Make it sharper', desc: 'Fix blur & low quality' },
+  { id: 'reframe', Icon: Smartphone,    title: 'Fit it for TikTok / Reels', desc: 'Auto-crop to vertical' },
+  { id: 'blur',    Icon: EyeOff,        title: 'Hide faces or plates', desc: 'Privacy blur' },
+  { id: 'caption', Icon: MessageSquare, title: 'Add captions', desc: 'Auto subtitles' },
+]
 
 export default function Home({ uploading, error, onFile, hint, onHint, onRetry }) {
   const inputRef = useRef(null)
@@ -60,10 +62,20 @@ export default function Home({ uploading, error, onFile, hint, onHint, onRetry }
           <>
             <div className="tile"><ArrowUp size={24} strokeWidth={2.4} /></div>
             <div className="t1">Add your video</div>
-            <div className="t2">{capLine(hint)} · deleted after 6 hours</div>
           </>
         )}
       </button>
+
+      <div className="cr-label">Or pick a job</div>
+      <div className="cr-jobs">
+        {JOBS.map(({ id, Icon, title, desc }) => (
+          <button key={id} className="cr-job" onClick={() => !uploading && pick(id)}>
+            <Icon size={19} strokeWidth={2} />
+            <span className="jt">{title}</span>
+            <span className="jd">{desc}</span>
+          </button>
+        ))}
+      </div>
 
       <footer className="cr-foot">
         For videos you own or are licensed to edit · free preview on everything
