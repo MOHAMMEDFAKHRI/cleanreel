@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Moon, Sun } from 'lucide-react'
-import Home from './screens/Home.jsx'
+import { Moon, Sun, ChevronLeft } from 'lucide-react'
+import Home, { JOBS } from './screens/Home.jsx'
 import Analyzing from './screens/Analyzing.jsx'
 import Mark from './screens/Mark.jsx'
 import Working from './screens/Working.jsx'
@@ -132,25 +132,25 @@ export default function App() {
     }
     const d = res.data
     track('upload_ok', { seconds: d.seconds, w: d.width, h: d.height })
-    prewarm(jobHint === 'erase' ? 'erase' : jobHint === 'enhance' ? 'enhance' : 'remove')
     setVideo({ fileId: d.file_id, width: d.width, height: d.height, seconds: d.seconds })
     setUp(null); setPreview(null); setDone(null)
-    setScreen('analyzing')
+    if (!jobHint) { setScreen('choosejob'); return }   // no job picked -> ask, don't assume
+    routeJob(jobHint, d.file_id)
+  }, [showToast])
 
-    if (jobHint === 'reel') {            // reels don't need watermark detection
-      setRegions([]); setSelected(new Set())
-      setTimeout(() => setScreen('reelplan'), MIN_ANALYZE_MS)
-      return
-    }
+  /** Analyze the uploaded clip and land on the decision screen for jobHint. */
+  const routeJob = useCallback(async (jobHint, fileId) => {
+    prewarm(jobHint === 'erase' ? 'erase' : jobHint === 'enhance' ? 'enhance' : 'remove')
+    setScreen('analyzing')
     const t0 = Date.now()
-    const resp = await getRegions(d.file_id)
+    const resp = await getRegions(fileId)
     const wait = Math.max(0, MIN_ANALYZE_MS - (Date.now() - t0))
     setTimeout(() => {
       const regs = resp?.regions || []
       track('regions_found', { n: regs.length, preselected: regs.filter(r => r.preselected).length, type: resp?.watermark_type })
       setRegions(regs)
       setSelected(new Set(regs.filter(r => r.preselected).map(r => r.id)))
-      const dest = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions', reel: 'reelplan' }[jobHint] || 'mark'
+      const dest = { enhance: 'enhance', reframe: 'reframe', blur: 'blur', caption: 'captions' }[jobHint] || 'mark'
       setScreen(dest)
       if (dest === 'mark') {
         const found = regs.filter(r => r.preselected)
@@ -415,6 +415,25 @@ export default function App() {
         </>
       )}
       {screen === 'analyzing' && <Analyzing />}
+      {screen === 'choosejob' && video && (
+        <>
+          <div className="cr-backrow">
+            <button className="cr-back" onClick={reset} aria-label="Back"><ChevronLeft size={18} /></button>
+            <div className="cr-dots"><i className="on" /><i /><i /></div>
+          </div>
+          <h1 className="cr-h1" style={{ fontSize: 22 }}>Got it — what should we do?</h1>
+          <p className="cr-sub">Pick a job for this clip.</p>
+          <div className="cr-jobs">
+            {JOBS.map(({ id, Icon, title, desc }) => (
+              <button key={id} className="cr-job" onClick={() => { setHint(id); routeJob(id, video.fileId) }}>
+                <Icon size={19} strokeWidth={2} />
+                <span className="jt">{title}</span>
+                <span className="jd">{desc}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {screen === 'mark' && video && (
         <Mark
           video={video} regions={regions} selected={selected} setSelected={setSelected}

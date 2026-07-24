@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { ArrowUp, Droplet, Eraser, Sparkles, Smartphone, EyeOff, MessageSquare } from 'lucide-react'
 
-const JOBS = [
+export const JOBS = [
   { id: 'remove',  Icon: Droplet,       title: 'Take a mark off my video', desc: 'Logos, watermarks, text' },
   { id: 'erase',   Icon: Eraser,        title: 'Erase something in the scene', desc: 'People, objects, clutter' },
   { id: 'enhance', Icon: Sparkles,      title: 'Make it sharper', desc: 'Fix blur & low quality' },
