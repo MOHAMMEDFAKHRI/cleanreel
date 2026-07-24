@@ -323,7 +323,9 @@ function track(ev,props){ try{ if(PH_KEY&&window.posthog&&posthog.capture) posth
       <button class="tool mode" data-task="reframe">📱 Reframe</button>
       <button class="tool mode" data-task="blur">🕶 Privacy blur</button>
       <button class="tool mode" data-task="captions">💬 Captions</button>
-      <button class="tool mode" data-task="reel">🎬 Make a Reel</button>
+      <!-- Make a Reel disabled 2026-07 — re-enable by restoring this button
+      <button class="tool mode" data-task="reel">🎬 Make a Reel</button> -->
+
     </div>
     <div class="grid2">
       <div>
@@ -913,7 +915,7 @@ async function handleHash(){
   } else if(h==='#paid'){ history.replaceState(null,'','#tool'); await refreshMe(); $("acctInfo").innerHTML+=' <b>— thanks, credits added!</b>'; }
   else if(h.startsWith('#tool=')){                 // deep link from SEO pages: /#tool=remove
     const t=h.slice(6);
-    if(['remove','erase','enhance','reframe','blur','captions','reel'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
+    if(['remove','erase','enhance','reframe','blur','captions'].includes(t)){ setTask(t); track('deep_link',{task:t}); }
     history.replaceState(null,'','#tool');
     try{ document.getElementById('tool').scrollIntoView(); }catch(e){}
   }
@@ -1519,7 +1521,7 @@ try{
       el.classList.add('reveal'); el.style.setProperty('--d', i%3); io.observe(el); });
   }
 }catch(e){}
-const _deepTask=(location.hash.match(/^#tool=(remove|erase|enhance|reframe|blur|captions|reel)$/)||[])[1];
+const _deepTask=(location.hash.match(/^#tool=(remove|erase|enhance|reframe|blur|captions)$/)||[])[1];
 setTask(_deepTask||'remove');   // sync the per-mode controls once at startup
 if(_deepTask){ history.replaceState(null,'','#tool');
   setTimeout(()=>{ const el=document.getElementById('tool');

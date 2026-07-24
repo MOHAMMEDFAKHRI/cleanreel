@@ -82,7 +82,7 @@ export default function App() {
       const a = loadAuth()
       if (a) me(a).then(info => { if (info && !info.expired) { const na = { ...a, credits: info.credits }; setAuth(na); saveAuth(na); showToast('Thanks — credits added!') } }).catch(() => {})
     } else if (h.startsWith('#tool=')) {
-      const map = { remove: 'remove', erase: 'erase', enhance: 'enhance', reframe: 'reframe', blur: 'blur', captions: 'caption', reel: 'reel' }
+      const map = { remove: 'remove', erase: 'erase', enhance: 'enhance', reframe: 'reframe', blur: 'blur', captions: 'caption' }
       const t = map[h.slice(6)]
       history.replaceState(null, '', window.location.pathname)
       if (t) { setJob(t); jobRef.current = t; showToast('Add your video — we’ll take it from there') }
@@ -126,8 +126,7 @@ export default function App() {
       const tier = tierOf(jobHint)
       if (res.status === 413 && tier === 'gpu' && fits('cpu'))
         options.push({ job: 'caption', label: `Caption it instead — up to ${Math.round(caps.cpu.seconds / 60)} min` })
-      if (res.status === 413 && tier !== 'reel' && fits('reel'))
-        options.push({ job: 'reel', label: `Make a Reel with it — up to ${Math.round(caps.reel.seconds / 60)} min` })
+      // (Make-a-Reel suggestion removed — reel entry points are disabled)
       setUpErr({ message: detail, options })
       return
     }
